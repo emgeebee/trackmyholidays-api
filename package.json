@@ -5,14 +5,19 @@
   "author": "",
   "license": "MIT",
   "scripts": {
-    "deploy": "serverless deploy --aws-profile main -r us-west-2",
-    "start": "serverless offline start"
+    "deploy:prod": "serverless deploy --stage prod --aws-profile main -r us-west-2",
+    "start": "serverless offline --port 3001"
   },
   "dependencies": {
+    "google-auth-library": "^5.5.1",
     "google-id-token-verifier": "^0.2.3",
-    "serverless": "^1.57.0",
+    "serverless-apigateway-service-proxy": "^2.1.0",
     "serverless-dynamodb-local": "0.2.35",
     "serverless-offline": "^5.12.0",
     "uuid": "^2.0.3"
+  },
+  "devDependencies": {
+    "serverless": "^3.14.0",
+    "serverless-http": "^3.0.1"
   }
 }
