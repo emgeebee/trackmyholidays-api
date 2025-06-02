@@ -39,4 +39,12 @@ jobs:
       - name: Deploy to AWS
         env:
           GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
-        run: npx serverless deploy --stage main --aws-profile main -r us-west-2
+        run: npx serverless deploy --stage ${{ env.STAGE }} --aws-profile main -r us-west-2
+
+      - name: Get API URL
+        id: api
+        run: |
+          API_URL=$(npx serverless info --stage ${{ env.STAGE }} --aws-profile main -r us-west-2 | grep "endpoint:" | cut -d' ' -f2)
+          echo "API_URL=$API_URL" >> $GITHUB_ENV
+          echo "API_URL=$API_URL" >> $GITHUB_OUTPUT
+
