@@ -20,9 +20,9 @@ module.exports.update = (event, context, callback) => {
   }
 
   const params = {
-    TableName: process.env.DYNAMODB_TABLE,
+    TableName: `${process.env.DYNAMODB_TABLE}-${process.env.STAGE}`,
     Key: {
-      id: event.pathParameters.id,
+      id: context.uid,
     },
     ExpressionAttributeNames: {
       '#todo_text': 'text',

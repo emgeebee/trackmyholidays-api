@@ -1,12 +1,14 @@
-service: aws-node-rest-api-with-dynamodb
+service: holidays
 
-frameworkVersion: ">=1.1.0 <2.0.0"
+frameworkVersion: "3"
 
 plugins:
   - serverless-dynamodb-local
   - serverless-offline
+  - serverless-apigateway-service-proxy
 
 custom:
+  myStage: ${opt:stage, self:provider.stage}
   dynamodb:
     start:
       port: 8000
@@ -16,17 +18,21 @@ custom:
       dir: offline/migrations
     stages:
       - dev
+      - prod
   authorizers:
     auth:
-      name: authorizerFunc
+      name: authFunc
       type: request
       identitySource: method.request.header.Authorization
 
+
 provider:
   name: aws
-  runtime: nodejs10.x
+  runtime: nodejs14.x
   environment:
-    DYNAMODB_TABLE: ${self:service}-${opt:stage, self:provider.stage}
+    DYNAMODB_TABLE: "holidays"
+    STAGE: ${self:custom.myStage}
+    GOOGLE_CLIENT_ID: ${env:GOOGLE_CLIENT_ID}
   iamRoleStatements:
     - Effect: Allow
       Action:
@@ -35,61 +41,49 @@ provider:
         - dynamodb:GetItem
         - dynamodb:PutItem
         - dynamodb:UpdateItem
-        - dynamodb:DeleteItem
       Resource: "arn:aws:dynamodb:${opt:region, self:provider.region}:*:table/${self:provider.environment.DYNAMODB_TABLE}"
 
 functions:
-  authorizerFunc:
-    handler: auth/auth.auth
+  authFunc:
+    handler: auth/auth.authorizer
 
   create:
-    handler: todos/create.create
+    handler: holidays/create.create
     events:
       - http:
-          path: todos
+          path: holidays
           method: post
           cors: true
-          authorizer: ${self:custom.authorizers.authorizerFunc}
-
-  list:
-    handler: todos/list.list
-    events:
-      - http:
-          path: todos
-          method: get
-          cors: true
-          authorizer: ${self:custom.authorizers.authorizerFunc}
+          authorizer: ${self:custom.authorizers.auth}
 
   get:
-    handler: todos/get.get
+    handler: holidays/get.get
     events:
       - http:
-          path: todos/{id}
+          path: holidays
           method: get
           cors: true
-          authorizer: authorizerFunc
+          authorizer:
+            name: authFunc
+            identitySource: method.request.header.Authorization
 
   update:
-    handler: todos/update.update
+    handler: holidays/update.update
     events:
       - http:
-          path: todos/{id}
+          path: holidays/{id}
           method: put
           cors: true
-          authorizer: authorizerFunc
-
-  delete:
-    handler: todos/delete.delete
-    events:
-      - http:
-          path: todos/{id}
-          method: delete
-          cors: true
-          authorizer: authorizerFunc
+          authorizer:
+            name: authFunc
+            identitySource: method.request.header.Authorization
 
 resources:
   Resources:
-    TodosDynamoDbTable:
+    holidaysStaticFilesBucket:
+      Type: AWS::S3::Bucket
+
+    holidaysDynamoDbTable:
       Type: 'AWS::DynamoDB::Table'
       DeletionPolicy: Retain
       Properties:
@@ -104,7 +98,7 @@ resources:
         ProvisionedThroughput:
           ReadCapacityUnits: 1
           WriteCapacityUnits: 1
-        TableName: ${self:provider.environment.DYNAMODB_TABLE}
+        TableName: ${self:provider.environment.DYNAMODB_TABLE}-${self:custom.myStage}
     AuthFailureGatewayResponse:
       Type: 'AWS::ApiGateway::GatewayResponse'
       Properties:
