@@ -6,21 +6,21 @@ const dynamoDb = require('./dynamodb');
 module.exports.create = (event, context, callback) => {
   const timestamp = new Date().getTime();
   const data = JSON.parse(event.body);
-  if (typeof data.text !== 'string') {
-    console.error('Validation Failed');
-    callback(null, {
-      statusCode: 400,
-      headers: { 'Content-Type': 'text/plain' },
-      body: 'Couldn\'t create the todo item.',
-    });
-    return;
-  }
+  // if (typeof data.text !== 'string') {
+    // console.error('Validation Failed');
+    // callback(null, {
+      // statusCode: 400,
+      // headers: { 'Content-Type': 'text/plain' },
+      // body: 'Couldn\'t create the todo item.',
+    // });
+    // return;
+  // }
 
   const params = {
-    TableName: process.env.DYNAMODB_TABLE,
+    TableName: `${process.env.DYNAMODB_TABLE}-${process.env.STAGE}`,
     Item: {
-      id: uuid.v1(),
-      text: data.text,
+      id: event.requestContext.authorizer.uid,
+      text: data,
       checked: false,
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -44,6 +44,10 @@ module.exports.create = (event, context, callback) => {
     const response = {
       statusCode: 200,
       body: JSON.stringify(params.Item),
+      headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Credentials': true,
+      },
     };
     callback(null, response);
   });

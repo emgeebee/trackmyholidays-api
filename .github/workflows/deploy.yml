@@ -1,0 +1,32 @@
+name: Deploy Serverless
+
+on:
+    pull_request:
+      types: [opened, synchronize, reopened]
+    push:
+      branches:
+        - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'pull_request' && 'dev' || 'prod' }}
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '14'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set environment
+        run: echo "STAGE=${{ github.event_name == 'pull_request' && 'dev' || 'prod' }}" >> $GITHUB_ENV
+
+      - name: Deploy to AWS
+        env:
+          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
+        run: npx serverless deploy --stage ${{ env.STAGE }} --aws-profile main -r us-west-2
