@@ -7,8 +7,10 @@ plugins:
   - serverless-offline
   - serverless-apigateway-service-proxy
 
+
 custom:
   myStage: ${opt:stage, self:provider.stage}
+
   dynamodb:
     start:
       port: 8000
@@ -24,7 +26,24 @@ custom:
       name: authFunc
       type: request
       identitySource: method.request.header.Authorization
-
+  apiGatewayServiceProxies:
+    - s3:
+        path: /
+        method: get
+        action: GetObject
+        bucket:
+          Ref: holidaysStaticFilesBucket
+        key: 'index.html'
+        cors: true
+    - s3:
+        path: /{asset}
+        method: get
+        action: GetObject
+        bucket:
+          Ref: holidaysStaticFilesBucket
+        key:
+          pathParam: asset
+        cors: true
 
 provider:
   name: aws
@@ -41,7 +60,17 @@ provider:
         - dynamodb:GetItem
         - dynamodb:PutItem
         - dynamodb:UpdateItem
-      Resource: "arn:aws:dynamodb:${opt:region, self:provider.region}:*:table/${self:provider.environment.DYNAMODB_TABLE}"
+        - dynamodb:DeleteItem
+      Resource: 
+        - "arn:aws:dynamodb:${opt:region, self:provider.region}:*:table/${self:provider.environment.DYNAMODB_TABLE}-${self:custom.myStage}"
+    - Effect: Allow
+      Action:
+        - apigateway:GET
+        - apigateway:POST
+        - apigateway:PUT
+        - apigateway:DELETE
+        - apigateway:PATCH
+      Resource: "*"
 
 functions:
   authFunc:
@@ -83,22 +112,24 @@ resources:
     holidaysStaticFilesBucket:
       Type: AWS::S3::Bucket
 
-    holidaysDynamoDbTable:
-      Type: 'AWS::DynamoDB::Table'
-      DeletionPolicy: Retain
-      Properties:
-        AttributeDefinitions:
-          -
-            AttributeName: id
-            AttributeType: S
-        KeySchema:
-          -
-            AttributeName: id
-            KeyType: HASH
-        ProvisionedThroughput:
-          ReadCapacityUnits: 1
-          WriteCapacityUnits: 1
-        TableName: ${self:provider.environment.DYNAMODB_TABLE}-${self:custom.myStage}
+    # holidaysDynamoDbTable:
+    #   Type: 'AWS::DynamoDB::Table'
+    #   DeletionPolicy: Retain
+    #   UpdateReplacePolicy: Retain
+    #   Properties:
+    #     AttributeDefinitions:
+    #       -
+    #         AttributeName: id
+    #         AttributeType: S
+    #     KeySchema:
+    #       -
+    #         AttributeName: id
+    #         KeyType: HASH
+    #     ProvisionedThroughput:
+    #       ReadCapacityUnits: 1
+    #       WriteCapacityUnits: 1
+    #     TableName: ${self:provider.environment.DYNAMODB_TABLE}-${self:custom.myStage}
+        
     AuthFailureGatewayResponse:
       Type: 'AWS::ApiGateway::GatewayResponse'
       Properties:
