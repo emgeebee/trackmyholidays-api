@@ -82,8 +82,18 @@ functions:
       - http:
           path: holidays
           method: post
-          cors: true
           authorizer: ${self:custom.authorizers.auth}
+          cors:
+            origin: 'http://localhost:3000'
+            headers:
+              - Content-Type
+              - X-Amz-Date
+              - Authorization
+              - X-Api-Key
+              - X-Amz-Security-Token
+              - X-Amz-User-Agent
+            allowCredentials: false
+
 
   get:
     handler: holidays/get.get
@@ -91,7 +101,16 @@ functions:
       - http:
           path: holidays
           method: get
-          cors: true
+          cors:
+            origin: 'http://localhost:3000'
+            headers:
+              - Content-Type
+              - X-Amz-Date
+              - Authorization
+              - X-Api-Key
+              - X-Amz-Security-Token
+              - X-Amz-User-Agent
+            allowCredentials: false
           authorizer:
             name: authFunc
             identitySource: method.request.header.Authorization
@@ -102,7 +121,16 @@ functions:
       - http:
           path: holidays/{id}
           method: put
-          cors: true
+          cors:
+            origin: 'http://localhost:3000'
+            headers:
+              - Content-Type
+              - X-Amz-Date
+              - Authorization
+              - X-Api-Key
+              - X-Amz-Security-Token
+              - X-Amz-User-Agent
+            allowCredentials: false
           authorizer:
             name: authFunc
             identitySource: method.request.header.Authorization
@@ -111,7 +139,6 @@ resources:
   Resources:
     holidaysStaticFilesBucket:
       Type: AWS::S3::Bucket
-
     # holidaysDynamoDbTable:
     #   Type: 'AWS::DynamoDB::Table'
     #   DeletionPolicy: Retain
