@@ -55,16 +55,23 @@ function generate_policy(principal_id, effect, resource, uid) {
 }
 
 module.exports.authorizer = (event, context, callback) => {
-  var token = event.authorizationToken
-    ? event.authorizationToken.replace("Bearer ", "")
-    : "";
+  const authorizationHeader =
+    (event.headers && (event.headers.Authorization || event.headers.authorization)) || "";
+  const rawToken = event.authorizationToken || authorizationHeader;
+  const token = rawToken.replace(/^Bearer\s+/i, "").trim();
+
+  if (!token) {
+    callback("Unauthorized");
+    return;
+  }
+
   verify(token)
     .then((uid) => {
       console.log("eee", event.methodArn);
-      callback(null, generate_policy(1, "Allow", event.methodArn, uid));
+      callback(null, generate_policy(uid, "Allow", event.methodArn, uid));
     })
     .catch((err) => {
       console.error(err);
-      callback("Denied");
+      callback("Unauthorized");
     });
 };
