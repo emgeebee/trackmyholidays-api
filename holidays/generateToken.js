@@ -17,10 +17,19 @@ module.exports.generateToken = (event, context, callback) => {
     return;
   }
 
+  const authorizer =
+    event.requestContext && event.requestContext.authorizer
+      ? event.requestContext.authorizer
+      : {};
+
+  // REST API custom authorizers usually expose principalId/context directly.
+  // HTTP API custom authorizers can nest values under authorizer.lambda.
   const sub =
-    event.requestContext &&
-    event.requestContext.authorizer &&
-    event.requestContext.authorizer.sub;
+    authorizer.uid ||
+    authorizer.sub ||
+    authorizer.principalId ||
+    (authorizer.claims && authorizer.claims.sub) ||
+    (authorizer.lambda && (authorizer.lambda.uid || authorizer.lambda.sub || authorizer.lambda.principalId));
 
   if (!sub) {
     callback(null, {
