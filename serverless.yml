@@ -52,6 +52,8 @@ provider:
     DYNAMODB_TABLE: "holidays"
     STAGE: ${self:custom.myStage}
     GOOGLE_CLIENT_ID: ${env:GOOGLE_CLIENT_ID}
+    TOKEN_SIGNING_SECRET: ${env:TOKEN_SIGNING_SECRET}
+    TOKEN_EXPIRY: ${env:TOKEN_EXPIRY, '365d'}
   iamRoleStatements:
     - Effect: Allow
       Action:
@@ -107,6 +109,17 @@ functions:
             name: authFunc
             identitySource: method.request.header.Authorization
 
+  generateToken:
+    handler: holidays/generateToken.generateToken
+    events:
+      - http:
+          path: generateToken
+          method: post
+          cors: true
+          authorizer:
+            name: authFunc
+            identitySource: method.request.header.Authorization
+
 resources:
   Resources:
     holidaysStaticFilesBucket:
@@ -136,6 +149,7 @@ resources:
         ResponseParameters:
           gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
           gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
+          gatewayresponse.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
         ResponseType: UNAUTHORIZED
         RestApiId:
           Ref: 'ApiGatewayRestApi'
