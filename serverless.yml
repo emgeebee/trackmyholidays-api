@@ -56,7 +56,7 @@ provider:
     TOKEN_EXPIRY: ${env:TOKEN_EXPIRY, '365d'}
     TOKENS_TABLE: tokens
     DOCS_BUCKET:
-      Ref: holidaysStaticFilesBucket
+      Ref: docStoreBucket
   iamRoleStatements:
     - Effect: Allow
       Action:
@@ -88,11 +88,11 @@ provider:
         - Fn::Join:
             - ''
             - - 'arn:aws:s3:::'
-              - Ref: holidaysStaticFilesBucket
+              - Ref: docStoreBucket
         - Fn::Join:
             - ''
             - - 'arn:aws:s3:::'
-              - Ref: holidaysStaticFilesBucket
+              - Ref: docStoreBucket
               - '/*'
 
 functions:
@@ -221,6 +221,9 @@ functions:
 resources:
   Resources:
     holidaysStaticFilesBucket:
+      Type: AWS::S3::Bucket
+
+    docStoreBucket:
       Type: AWS::S3::Bucket
 
     holidaysTokensTable:
