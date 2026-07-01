@@ -2,6 +2,7 @@
 
 // var verifier = require('google-id-token-verifier');
 const jwt = require("jsonwebtoken");
+const tokenStore = require("../holidays/tokenStore");
 
 // app's client IDs to check with audience in ID Token.
 var CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
@@ -29,7 +30,12 @@ async function verify(token) {
       throw new Error("Token payload is missing required sub claim");
     }
 
-    return payload.sub;
+    const storedSub = await tokenStore.getSubForToken(token);
+    if (!storedSub || storedSub !== payload.sub) {
+      throw new Error("Token is not registered");
+    }
+
+    return storedSub;
   }
 }
 

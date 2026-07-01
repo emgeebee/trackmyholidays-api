@@ -1,7 +1,7 @@
 {
-  "name": "aws-node-rest-api-with-dynamodb",
-  "version": "1.0.0",
-  "description": "Serverless CRUD service exposing a REST HTTP interface",
+  "name": "trackmyholidays-api",
+  "version": "2.0.0",
+  "description": "Track My Holidays serverless API",
   "author": "",
   "license": "MIT",
   "scripts": {
