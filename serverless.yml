@@ -54,6 +54,9 @@ provider:
     GOOGLE_CLIENT_ID: ${env:GOOGLE_CLIENT_ID}
     TOKEN_SIGNING_SECRET: ${env:TOKEN_SIGNING_SECRET}
     TOKEN_EXPIRY: ${env:TOKEN_EXPIRY, '365d'}
+    TOKENS_TABLE: tokens
+    DOCS_BUCKET:
+      Ref: holidaysStaticFilesBucket
   iamRoleStatements:
     - Effect: Allow
       Action:
@@ -65,6 +68,8 @@ provider:
         - dynamodb:DeleteItem
       Resource: 
         - "arn:aws:dynamodb:${opt:region, self:provider.region}:*:table/${self:provider.environment.DYNAMODB_TABLE}-${self:custom.myStage}"
+        - "arn:aws:dynamodb:${opt:region, self:provider.region}:*:table/${self:provider.environment.TOKENS_TABLE}-${self:custom.myStage}"
+        - "arn:aws:dynamodb:${opt:region, self:provider.region}:*:table/${self:provider.environment.TOKENS_TABLE}-${self:custom.myStage}/index/*"
     - Effect: Allow
       Action:
         - apigateway:GET
@@ -73,6 +78,22 @@ provider:
         - apigateway:DELETE
         - apigateway:PATCH
       Resource: "*"
+    - Effect: Allow
+      Action:
+        - s3:GetObject
+        - s3:PutObject
+        - s3:DeleteObject
+        - s3:ListBucket
+      Resource:
+        - Fn::Join:
+            - ''
+            - - 'arn:aws:s3:::'
+              - Ref: holidaysStaticFilesBucket
+        - Fn::Join:
+            - ''
+            - - 'arn:aws:s3:::'
+              - Ref: holidaysStaticFilesBucket
+              - '/*'
 
 functions:
   authFunc:
@@ -120,10 +141,115 @@ functions:
             name: authFunc
             identitySource: method.request.header.Authorization
 
+  getMyTokens:
+    handler: holidays/getMyTokens.getMyTokens
+    events:
+      - http:
+          path: tokens
+          method: get
+          cors: true
+          authorizer:
+            name: authFunc
+            identitySource: method.request.header.Authorization
+
+  expireToken:
+    handler: holidays/expireToken.expireToken
+    events:
+      - http:
+          path: expireToken
+          method: post
+          cors: true
+          authorizer:
+            name: authFunc
+            identitySource: method.request.header.Authorization
+
+  docsCreate:
+    handler: holidays/docs/create.create
+    events:
+      - http:
+          path: docs
+          method: post
+          cors: true
+          authorizer:
+            name: authFunc
+            identitySource: method.request.header.Authorization
+
+  docsList:
+    handler: holidays/docs/list.list
+    events:
+      - http:
+          path: docs
+          method: get
+          cors: true
+          authorizer:
+            name: authFunc
+            identitySource: method.request.header.Authorization
+
+  docsGet:
+    handler: holidays/docs/get.get
+    events:
+      - http:
+          path: docs/{id}
+          method: get
+          cors: true
+          authorizer:
+            name: authFunc
+            identitySource: method.request.header.Authorization
+
+  docsUpdate:
+    handler: holidays/docs/update.update
+    events:
+      - http:
+          path: docs/{id}
+          method: put
+          cors: true
+          authorizer:
+            name: authFunc
+            identitySource: method.request.header.Authorization
+
+  docsDelete:
+    handler: holidays/docs/delete.delete
+    events:
+      - http:
+          path: docs/{id}
+          method: delete
+          cors: true
+          authorizer:
+            name: authFunc
+            identitySource: method.request.header.Authorization
+
 resources:
   Resources:
     holidaysStaticFilesBucket:
       Type: AWS::S3::Bucket
+
+    holidaysTokensTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: Retain
+      UpdateReplacePolicy: Retain
+      Properties:
+        AttributeDefinitions:
+          - AttributeName: token
+            AttributeType: S
+          - AttributeName: userid
+            AttributeType: S
+        KeySchema:
+          - AttributeName: token
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: userid-index
+            KeySchema:
+              - AttributeName: userid
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+            ProvisionedThroughput:
+              ReadCapacityUnits: 1
+              WriteCapacityUnits: 1
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        TableName: ${self:provider.environment.TOKENS_TABLE}-${self:custom.myStage}
 
     # holidaysDynamoDbTable:
     #   Type: 'AWS::DynamoDB::Table'
