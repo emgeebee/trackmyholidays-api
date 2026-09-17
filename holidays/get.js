@@ -1,8 +1,6 @@
 'use strict';
 
-const AWS = require('aws-sdk'); // eslint-disable-line import/no-extraneous-dependencies
-
-const dynamoDb = new AWS.DynamoDB.DocumentClient();
+const dynamoDb = require('./dynamodb');
 
 module.exports.get = (event, context, callback) => {
     console.log(event);

@@ -45,6 +45,22 @@ custom:
           pathParam: asset
         cors: true
 
+package:
+  patterns:
+    - '!node_modules/aws-sdk/**'
+    - '!node_modules/@node-llama-cpp/**'
+    - '!node_modules/node-llama-cpp/**'
+    - '!node_modules/serverless/**'
+    - '!node_modules/serverless-*/**'
+    - '!node_modules/@serverless/**'
+    - '!node_modules/@types/**'
+    - '!.serverless/**'
+    - '!.dynamodb/**'
+    - '!offline/**'
+    - '!scripts/**'
+    - '!**/*.md'
+    - '!**/*.map'
+
 provider:
   name: aws
   runtime: nodejs20.x
@@ -57,6 +73,9 @@ provider:
     TOKENS_TABLE: tokens
     DOCS_BUCKET:
       Ref: docStoreBucket
+    SERVICE_NAME: holidays
+    LOG_LOOKBACK: 7d
+    L3_AGENT_MODEL: ${env:L3_AGENT_MODEL, 'amazon.nova-lite-v1:0'}
   iamRoleStatements:
     - Effect: Allow
       Action:
@@ -94,6 +113,26 @@ provider:
             - - 'arn:aws:s3:::'
               - Ref: docStoreBucket
               - '/*'
+    - Effect: Allow
+      Action:
+        - logs:StartQuery
+        - logs:GetQueryResults
+        - logs:DescribeLogGroups
+        - logs:FilterLogEvents
+      Resource: "*"
+    - Effect: Allow
+      Action:
+        - bedrock:InvokeModel
+        - bedrock:InvokeModelWithResponseStream
+        - bedrock:Converse
+        - bedrock:ConverseStream
+      Resource: "*"
+    - Effect: Allow
+      Action:
+        - aws-marketplace:ViewSubscriptions
+        - aws-marketplace:Subscribe
+        - aws-marketplace:Unsubscribe
+      Resource: "*"
 
 functions:
   authFunc:
@@ -217,6 +256,16 @@ functions:
           authorizer:
             name: authFunc
             identitySource: method.request.header.Authorization
+
+  l3Agent:
+    handler: agents/l3Agent.l3Agent
+    timeout: 300
+    memorySize: 512
+    events:
+      - schedule:
+          name: l3Agent
+          rate: rate(7 days)
+          enabled: true
 
 resources:
   Resources:
