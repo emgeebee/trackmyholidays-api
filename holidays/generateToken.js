@@ -1,7 +1,7 @@
 "use strict";
 
 const jwt = require("jsonwebtoken");
-const { getUserIdFromEvent, corsHeaders } = require("./authorizer");
+const { getAuthenticatedIdentity, corsHeaders } = require("./authorizer");
 const tokenStore = require("./tokenStore");
 
 const TOKEN_SIGNING_SECRET = process.env.TOKEN_SIGNING_SECRET;
@@ -19,7 +19,7 @@ module.exports.generateToken = async (event, context, callback) => {
     return;
   }
 
-  const sub = getUserIdFromEvent(event);
+  const { uid: sub, email, name } = getAuthenticatedIdentity(event);
 
   if (!sub) {
     callback(null, {
@@ -30,7 +30,15 @@ module.exports.generateToken = async (event, context, callback) => {
     return;
   }
 
-  const token = jwt.sign({ sub, iss: "holidays-api" }, TOKEN_SIGNING_SECRET, {
+  const claims = { sub, iss: "holidays-api" };
+  if (email) {
+    claims.email = email;
+  }
+  if (name) {
+    claims.name = name;
+  }
+
+  const token = jwt.sign(claims, TOKEN_SIGNING_SECRET, {
     expiresIn: TOKEN_EXPIRY,
   });
 

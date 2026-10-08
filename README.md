@@ -213,7 +213,7 @@ Deleting a document also revokes all of its share links.
 
 ### Sharing documents
 
-The owner creates a share link code for a document. Anyone signed in who has the code can read the document, but not change it. Only the owner can list or revoke codes.
+The owner creates a share link code for a document. Anyone signed in who has the code can read the document, but not change it. Only the owner can list or revoke codes, and see who has opened each one.
 
 #### Create a share link
 
@@ -224,7 +224,7 @@ curl -X POST https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs/su
 
 Example Result:
 ```bash
-{"code":"q3Zr8kP1xW9vYbT2nLm4sA0d","docId":"summer-trip","permission":"read","createdAt":"2026-10-08T18:00:00.000Z"}
+{"code":"q3Zr8kP1xW9vYbT2nLm4sA0d","docId":"summer-trip","permission":"read","createdAt":"2026-10-08T18:00:00.000Z","accessedBy":[]}
 ```
 
 #### List a document's share links
@@ -236,8 +236,10 @@ curl https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs/summer-tri
 
 Example Result:
 ```bash
-[{"code":"q3Zr8kP1xW9vYbT2nLm4sA0d","docId":"summer-trip","permission":"read","createdAt":"2026-10-08T18:00:00.000Z"}]
+[{"code":"q3Zr8kP1xW9vYbT2nLm4sA0d","docId":"summer-trip","permission":"read","createdAt":"2026-10-08T18:00:00.000Z","accessedBy":[{"userid":"117283546120394857261","email":"friend@example.com","name":"A Friend","firstAccessedAt":"2026-10-08T19:00:00.000Z","lastAccessedAt":"2026-10-09T08:30:00.000Z","accessCount":3}]}]
 ```
+
+`accessedBy` lists everyone other than the owner who has opened the link. `email` and `name` come from their Google sign-in; long-lived tokens only include them if they were generated after this was added.
 
 #### Revoke a share link
 

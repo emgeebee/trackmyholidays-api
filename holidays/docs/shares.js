@@ -1,6 +1,10 @@
 'use strict';
 
-const { getAuthenticatedUserId, corsHeaders } = require('../authorizer');
+const {
+  getAuthenticatedUserId,
+  getAuthenticatedIdentity,
+  corsHeaders,
+} = require('../authorizer');
 const docStore = require('./docStore');
 const shareStore = require('./shareStore');
 
@@ -18,6 +22,7 @@ function toPublicShare(share) {
     docId: share.docId,
     permission: share.permission,
     createdAt: share.createdAt,
+    accessedBy: share.accessedBy || [],
   };
 }
 
@@ -100,7 +105,8 @@ module.exports.revoke = async (event, context, callback) => {
 };
 
 module.exports.getShared = async (event, context, callback) => {
-  if (!getAuthenticatedUserId(event)) {
+  const identity = getAuthenticatedIdentity(event);
+  if (!identity.uid) {
     respond(callback, event, 401, { message: 'Unauthorized: no user subject found.' });
     return;
   }
@@ -118,6 +124,14 @@ module.exports.getShared = async (event, context, callback) => {
     if (!doc) {
       respond(callback, event, 404, { message: 'Share link not found.' });
       return;
+    }
+
+    if (identity.uid !== share.ownerId) {
+      try {
+        await shareStore.recordAccess(share, identity);
+      } catch (err) {
+        console.error('Failed to record share access', err);
+      }
     }
 
     respond(callback, event, 200, { permission: share.permission, doc });
