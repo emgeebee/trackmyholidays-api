@@ -1,6 +1,5 @@
 "use strict";
 
-// var verifier = require('google-id-token-verifier');
 const jwt = require("jsonwebtoken");
 const tokenStore = require("../holidays/tokenStore");
 

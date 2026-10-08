@@ -59,6 +59,11 @@ package:
     - '!node_modules/aws-sdk/**'
     - '!node_modules/@node-llama-cpp/**'
     - '!node_modules/node-llama-cpp/**'
+    - '!node_modules/@tobilu/**'
+    - '!node_modules/better-sqlite3/**'
+    - '!node_modules/tree-sitter-*/**'
+    - '!node_modules/web-tree-sitter/**'
+    - '!node_modules/typescript/**'
     - '!node_modules/serverless/**'
     - '!node_modules/serverless-*/**'
     - '!node_modules/@serverless/**'
@@ -72,7 +77,7 @@ package:
 
 provider:
   name: aws
-  runtime: nodejs20.x
+  runtime: nodejs22.x
   environment:
     DYNAMODB_TABLE: "holidays"
     STAGE: ${self:custom.myStage}

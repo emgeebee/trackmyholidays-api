@@ -1,6 +1,5 @@
 'use strict';
 
-const uuid = require('uuid');
 const dynamoDb = require('./dynamodb');
 const { corsHeaders } = require('./authorizer');
 

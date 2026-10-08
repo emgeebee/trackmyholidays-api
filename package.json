@@ -6,25 +6,22 @@
   "license": "MIT",
   "scripts": {
     "deploy:prod": "echo 'this happens via github actions CI/CD'",
-    "start": "serverless offline --port 3001"
+    "start": "serverless offline --httpPort 3001"
   },
   "dependencies": {
-    "@aws-sdk/client-cloudwatch-logs": "^3.901.0",
-    "@aws-sdk/client-dynamodb": "^3.901.0",
-    "@aws-sdk/client-s3": "^3.901.0",
-    "@aws-sdk/lib-dynamodb": "^3.901.0",
-    "@strands-agents/sdk": "^1.16.0",
-    "google-auth-library": "^5.5.1",
-    "google-id-token-verifier": "^0.2.3",
+    "@aws-sdk/client-cloudwatch-logs": "^3.1148.0",
+    "@aws-sdk/client-dynamodb": "^3.1148.0",
+    "@aws-sdk/client-s3": "^3.1148.0",
+    "@aws-sdk/lib-dynamodb": "^3.1148.0",
+    "@strands-agents/sdk": "^1.20.0",
+    "google-auth-library": "^11.2.0",
     "jsonwebtoken": "^9.0.3",
-    "uuid": "^2.0.3"
+    "zod": "^4.6.5"
   },
   "devDependencies": {
-    "serverless": "^3.14.0",
-    "serverless-apigateway-service-proxy": "^2.1.0",
-    "serverless-domain-manager": "^3.0.0",
-    "serverless-dynamodb-local": "0.2.35",
-    "serverless-http": "^3.0.1",
-    "serverless-offline": "^5.12.0"
+    "serverless": "^3.40.0",
+    "serverless-apigateway-service-proxy": "^2.2.2",
+    "serverless-dynamodb-local": "^0.2.40",
+    "serverless-offline": "^13.10.1"
   }
 }

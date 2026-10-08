@@ -1,6 +1,6 @@
 'use strict';
 
-const uuid = require('uuid');
+const crypto = require('crypto');
 const { getAuthenticatedUserId, corsHeaders } = require('../authorizer');
 const docStore = require('./docStore');
 
@@ -28,7 +28,7 @@ module.exports.create = async (event, context, callback) => {
     return;
   }
 
-  const id = body.id || uuid.v4();
+  const id = body.id || crypto.randomUUID();
   if (!docStore.validateDocId(id)) {
     callback(null, {
       statusCode: 400,
