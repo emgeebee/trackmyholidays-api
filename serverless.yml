@@ -81,6 +81,7 @@ provider:
     TOKEN_SIGNING_SECRET: ${env:TOKEN_SIGNING_SECRET}
     TOKEN_EXPIRY: ${env:TOKEN_EXPIRY, '365d'}
     TOKENS_TABLE: tokens
+    DOC_SHARES_TABLE: docShares
     DOCS_BUCKET:
       Ref: docStoreBucket
     SERVICE_NAME: holidays
@@ -99,6 +100,8 @@ provider:
         - "arn:aws:dynamodb:${opt:region, self:provider.region}:*:table/${self:provider.environment.DYNAMODB_TABLE}-${self:custom.myStage}"
         - "arn:aws:dynamodb:${opt:region, self:provider.region}:*:table/${self:provider.environment.TOKENS_TABLE}-${self:custom.myStage}"
         - "arn:aws:dynamodb:${opt:region, self:provider.region}:*:table/${self:provider.environment.TOKENS_TABLE}-${self:custom.myStage}/index/*"
+        - "arn:aws:dynamodb:${opt:region, self:provider.region}:*:table/${self:provider.environment.DOC_SHARES_TABLE}-${self:custom.myStage}"
+        - "arn:aws:dynamodb:${opt:region, self:provider.region}:*:table/${self:provider.environment.DOC_SHARES_TABLE}-${self:custom.myStage}/index/*"
     - Effect: Allow
       Action:
         - apigateway:GET
@@ -267,6 +270,50 @@ functions:
             name: authFunc
             identitySource: method.request.header.Authorization
 
+  docsShareCreate:
+    handler: holidays/docs/shares.create
+    events:
+      - http:
+          path: docs/{id}/shares
+          method: post
+          cors: ${self:custom.cors}
+          authorizer:
+            name: authFunc
+            identitySource: method.request.header.Authorization
+
+  docsShareList:
+    handler: holidays/docs/shares.list
+    events:
+      - http:
+          path: docs/{id}/shares
+          method: get
+          cors: ${self:custom.cors}
+          authorizer:
+            name: authFunc
+            identitySource: method.request.header.Authorization
+
+  docsShareRevoke:
+    handler: holidays/docs/shares.revoke
+    events:
+      - http:
+          path: docs/{id}/shares/{code}
+          method: delete
+          cors: ${self:custom.cors}
+          authorizer:
+            name: authFunc
+            identitySource: method.request.header.Authorization
+
+  docsSharedGet:
+    handler: holidays/docs/shares.getShared
+    events:
+      - http:
+          path: shared/{code}
+          method: get
+          cors: ${self:custom.cors}
+          authorizer:
+            name: authFunc
+            identitySource: method.request.header.Authorization
+
   l3Agent:
     handler: agents/l3Agent.l3Agent
     timeout: 300
@@ -312,6 +359,34 @@ resources:
           ReadCapacityUnits: 1
           WriteCapacityUnits: 1
         TableName: ${self:provider.environment.TOKENS_TABLE}-${self:custom.myStage}
+
+    docSharesTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: Retain
+      UpdateReplacePolicy: Retain
+      Properties:
+        AttributeDefinitions:
+          - AttributeName: code
+            AttributeType: S
+          - AttributeName: docKey
+            AttributeType: S
+        KeySchema:
+          - AttributeName: code
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: docKey-index
+            KeySchema:
+              - AttributeName: docKey
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+            ProvisionedThroughput:
+              ReadCapacityUnits: 1
+              WriteCapacityUnits: 1
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        TableName: ${self:provider.environment.DOC_SHARES_TABLE}-${self:custom.myStage}
 
     # holidaysDynamoDbTable:
     #   Type: 'AWS::DynamoDB::Table'

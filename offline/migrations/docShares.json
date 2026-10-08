@@ -1,0 +1,41 @@
+{
+  "TableName": "docShares-dev",
+  "KeySchema": [
+    {
+      "AttributeName": "code",
+      "KeyType": "HASH"
+    }
+  ],
+  "AttributeDefinitions": [
+    {
+      "AttributeName": "code",
+      "AttributeType": "S"
+    },
+    {
+      "AttributeName": "docKey",
+      "AttributeType": "S"
+    }
+  ],
+  "GlobalSecondaryIndexes": [
+    {
+      "IndexName": "docKey-index",
+      "KeySchema": [
+        {
+          "AttributeName": "docKey",
+          "KeyType": "HASH"
+        }
+      ],
+      "Projection": {
+        "ProjectionType": "ALL"
+      },
+      "ProvisionedThroughput": {
+        "ReadCapacityUnits": 1,
+        "WriteCapacityUnits": 1
+      }
+    }
+  ],
+  "ProvisionedThroughput": {
+    "ReadCapacityUnits": 1,
+    "WriteCapacityUnits": 1
+  }
+}

@@ -54,6 +54,10 @@ endpoints:
   GET - https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs/{id}
   PUT - https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs/{id}
   DELETE - https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs/{id}
+  POST - https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs/{id}/shares
+  GET - https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs/{id}/shares
+  DELETE - https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs/{id}/shares/{code}
+  GET - https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/shared/{code}
 ```
 
 ## Usage
@@ -203,6 +207,62 @@ curl -X DELETE https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs/
 Example Result:
 ```bash
 {"message":"Document deleted."}
+```
+
+Deleting a document also revokes all of its share links.
+
+### Sharing documents
+
+The owner creates a share link code for a document. Anyone signed in who has the code can read the document, but not change it. Only the owner can list or revoke codes.
+
+#### Create a share link
+
+```bash
+curl -X POST https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs/summer-trip/shares \
+  -H 'authorization: Bearer <token>'
+```
+
+Example Result:
+```bash
+{"code":"q3Zr8kP1xW9vYbT2nLm4sA0d","docId":"summer-trip","permission":"read","createdAt":"2026-10-08T18:00:00.000Z"}
+```
+
+#### List a document's share links
+
+```bash
+curl https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs/summer-trip/shares \
+  -H 'authorization: Bearer <token>'
+```
+
+Example Result:
+```bash
+[{"code":"q3Zr8kP1xW9vYbT2nLm4sA0d","docId":"summer-trip","permission":"read","createdAt":"2026-10-08T18:00:00.000Z"}]
+```
+
+#### Revoke a share link
+
+```bash
+curl -X DELETE https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs/summer-trip/shares/q3Zr8kP1xW9vYbT2nLm4sA0d \
+  -H 'authorization: Bearer <token>'
+```
+
+Example Result:
+```bash
+{"message":"Share link revoked."}
+```
+
+#### Open a shared document
+
+Called by the person the link was shared with, using their own token.
+
+```bash
+curl https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/shared/q3Zr8kP1xW9vYbT2nLm4sA0d \
+  -H 'authorization: Bearer <their-token>'
+```
+
+Example Result:
+```bash
+{"permission":"read","doc":{"id":"summer-trip","title":"Summer holiday","data":{"destination":"Spain","days":10},"createdAt":"2026-10-08T18:00:00.000Z","updatedAt":"2026-10-08T18:00:00.000Z"}}
 ```
 
 ## Scaling
