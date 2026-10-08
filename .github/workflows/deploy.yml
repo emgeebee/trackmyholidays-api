@@ -39,6 +39,7 @@ jobs:
       - name: Deploy to AWS
         env:
           GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
+          FAMTREE_GOOGLE_CLIENT_ID: ${{ vars.FAMTREE_GOOGLE_CLIENT_ID }}
           TOKEN_SIGNING_SECRET: ${{ secrets.TOKEN_SIGNING_SECRET }}
         run: npx serverless deploy --stage ${{ env.STAGE }} --aws-profile main -r us-west-2
 

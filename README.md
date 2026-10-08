@@ -33,100 +33,177 @@ npm install
 
 ## Deploy
 
-In order to deploy the endpoint simply run
-
-```bash
-serverless deploy
-```
+Deploys run through GitHub Actions: pull requests deploy to `dev`, pushes to `main` deploy to `prod`.
 
 The expected result should be similar to:
 
 ```bash
-Serverless: Packaging service…
-Serverless: Uploading CloudFormation file to S3…
-Serverless: Uploading service .zip file to S3…
-Serverless: Updating Stack…
-Serverless: Checking Stack update progress…
-Serverless: Stack update finished…
-
 Service Information
-service: serverless-rest-api-with-dynamodb
-stage: dev
-region: us-east-1
-api keys:
-  None
+service: holidays
+stage: prod
+region: us-west-2
 endpoints:
-  POST - https://45wf34z5yf.execute-api.us-east-1.amazonaws.com/dev/todos
-  GET - https://45wf34z5yf.execute-api.us-east-1.amazonaws.com/dev/todos
-  GET - https://45wf34z5yf.execute-api.us-east-1.amazonaws.com/dev/todos/{id}
-  PUT - https://45wf34z5yf.execute-api.us-east-1.amazonaws.com/dev/todos/{id}
-  DELETE - https://45wf34z5yf.execute-api.us-east-1.amazonaws.com/dev/todos/{id}
-functions:
-  serverless-rest-api-with-dynamodb-dev-update: arn:aws:lambda:us-east-1:488110005556:function:serverless-rest-api-with-dynamodb-dev-update
-  serverless-rest-api-with-dynamodb-dev-get: arn:aws:lambda:us-east-1:488110005556:function:serverless-rest-api-with-dynamodb-dev-get
-  serverless-rest-api-with-dynamodb-dev-list: arn:aws:lambda:us-east-1:488110005556:function:serverless-rest-api-with-dynamodb-dev-list
-  serverless-rest-api-with-dynamodb-dev-create: arn:aws:lambda:us-east-1:488110005556:function:serverless-rest-api-with-dynamodb-dev-create
-  serverless-rest-api-with-dynamodb-dev-delete: arn:aws:lambda:us-east-1:488110005556:function:serverless-rest-api-with-dynamodb-dev-delete
+  POST - https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/holidays
+  GET - https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/holidays
+  PUT - https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/holidays/{id}
+  POST - https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/generateToken
+  GET - https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/tokens
+  POST - https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/expireToken
+  POST - https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs
+  GET - https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs
+  GET - https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs/{id}
+  PUT - https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs/{id}
+  DELETE - https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs/{id}
 ```
 
 ## Usage
 
-You can create, retrieve, update, or delete todos with the following commands:
+Every endpoint requires an `Authorization: Bearer <token>` header. The token can be either a Google ID token or a long-lived token from `POST /generateToken`. The user id always comes from the token, never from the URL or body.
 
-### Create a Todo
+The examples below use the prod base URL. Swap `/prod` for `/dev` to hit the dev stage.
+
+### Holidays
+
+#### Save holidays
+
+The whole request body is stored as the user's holidays record.
 
 ```bash
-curl -X POST https://XXXXXXX.execute-api.us-east-1.amazonaws.com/dev/todos --data '{ "text": "Learn Serverless" }'
+curl -X POST https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/holidays \
+  -H 'authorization: Bearer <token>' \
+  -H 'content-type: application/json' \
+  -d '{ "allowance": 25, "booked": ["2026-12-24", "2026-12-31"] }'
 ```
 
 Example Result:
 ```bash
-{"text":"Learn Serverless","id":"ee6490d0-aa11e6-9ede-afdfa051af86","createdAt":1479138570824,"checked":false,"updatedAt":1479138570824}%
+{"id":"103501357127260947071","text":{"allowance":25,"booked":["2026-12-24","2026-12-31"]},"checked":false,"createdAt":1791460800000,"updatedAt":1791460800000}
 ```
 
-### List all Todos
+#### Get holidays
 
 ```bash
-curl https://XXXXXXX.execute-api.us-east-1.amazonaws.com/dev/todos
-```
-
-Example output:
-```bash
-[{"text":"Deploy my first service","id":"ac90feaa11e6-9ede-afdfa051af86","checked":true,"updatedAt":1479139961304},{"text":"Learn Serverless","id":"206793aa11e6-9ede-afdfa051af86","createdAt":1479139943241,"checked":false,"updatedAt":1479139943241}]%
-```
-
-### Get one Todo
-
-```bash
-# Replace the <id> part with a real id from your todos table
-curl https://XXXXXXX.execute-api.us-east-1.amazonaws.com/dev/todos/<id>
+curl https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/holidays \
+  -H 'authorization: Bearer <token>'
 ```
 
 Example Result:
 ```bash
-{"text":"Learn Serverless","id":"ee6490d0-aa11e6-9ede-afdfa051af86","createdAt":1479138570824,"checked":false,"updatedAt":1479138570824}%
+{"id":"103501357127260947071","text":{"allowance":25,"booked":["2026-12-24","2026-12-31"]},"checked":false,"createdAt":1791460800000,"updatedAt":1791460800000}
 ```
 
-### Update a Todo
+#### Update holidays
 
 ```bash
-# Replace the <id> part with a real id from your todos table
-curl -X PUT https://XXXXXXX.execute-api.us-east-1.amazonaws.com/dev/todos/<id> --data '{ "text": "Learn Serverless", "checked": true }'
+curl -X PUT https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/holidays/<id> \
+  -H 'authorization: Bearer <token>' \
+  -H 'content-type: application/json' \
+  -d '{ "text": "Updated holidays", "checked": true }'
+```
+
+### Tokens
+
+#### Generate a long-lived token
+
+Call this with a Google ID token. The returned token authenticates as the same user.
+
+```bash
+curl -X POST https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/generateToken \
+  -H 'authorization: Bearer <google-id-token>'
 ```
 
 Example Result:
 ```bash
-{"text":"Learn Serverless","id":"ee6490d0-aa11e6-9ede-afdfa051af86","createdAt":1479138570824,"checked":true,"updatedAt":1479138570824}%
+{"token":"eyJhbGciOiJIUzI1NiIs...","sub":"103501357127260947071","expiresIn":"365d","expiresAt":"2027-10-08T18:00:00.000Z"}
 ```
 
-### Delete a Todo
+#### List my tokens
 
 ```bash
-# Replace the <id> part with a real id from your todos table
-curl -X DELETE https://XXXXXXX.execute-api.us-east-1.amazonaws.com/dev/todos/<id>
+curl https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/tokens \
+  -H 'authorization: Bearer <token>'
 ```
 
-No output
+Example Result:
+```bash
+{"tokens":[{"token":"eyJhbGciOiJIUzI1NiIs...","userid":"103501357127260947071","createdAt":"2026-10-08T18:00:00.000Z","expiresAt":"2027-10-08T18:00:00.000Z"}]}
+```
+
+#### Expire a token
+
+```bash
+curl -X POST https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/expireToken \
+  -H 'authorization: Bearer <token>' \
+  -H 'content-type: application/json' \
+  -d '{ "token": "<token-to-expire>" }'
+```
+
+Example Result:
+```bash
+{"message":"Token expired."}
+```
+
+### Documents
+
+Documents are stored as JSON in S3 at `docs/<userid>/<id>.json`. Ids may only contain letters, numbers, `_` and `-`.
+
+#### Create a document
+
+`id` is optional; one is generated if omitted.
+
+```bash
+curl -X POST https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs \
+  -H 'authorization: Bearer <token>' \
+  -H 'content-type: application/json' \
+  -d '{ "id": "summer-trip", "title": "Summer holiday", "data": { "destination": "Spain", "days": 10 } }'
+```
+
+Example Result:
+```bash
+{"id":"summer-trip","title":"Summer holiday","data":{"destination":"Spain","days":10},"createdAt":"2026-10-08T18:00:00.000Z","updatedAt":"2026-10-08T18:00:00.000Z"}
+```
+
+#### List my documents
+
+```bash
+curl https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs \
+  -H 'authorization: Bearer <token>'
+```
+
+Example Result:
+```bash
+{"docs":[{"id":"summer-trip","title":"Summer holiday","data":{"destination":"Spain","days":10},"createdAt":"2026-10-08T18:00:00.000Z","updatedAt":"2026-10-08T18:00:00.000Z"}]}
+```
+
+#### Get one document
+
+```bash
+curl https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs/summer-trip \
+  -H 'authorization: Bearer <token>'
+```
+
+#### Update a document
+
+The body replaces the document's fields; `createdAt` is preserved.
+
+```bash
+curl -X PUT https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs/summer-trip \
+  -H 'authorization: Bearer <token>' \
+  -H 'content-type: application/json' \
+  -d '{ "title": "Summer holiday (updated)", "data": { "destination": "Spain", "days": 12 } }'
+```
+
+#### Delete a document
+
+```bash
+curl -X DELETE https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs/summer-trip \
+  -H 'authorization: Bearer <token>'
+```
+
+Example Result:
+```bash
+{"message":"Document deleted."}
+```
 
 ## Scaling
 

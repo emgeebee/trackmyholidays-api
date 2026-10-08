@@ -1,6 +1,7 @@
 'use strict';
 
 const dynamoDb = require('./dynamodb');
+const { corsHeaders } = require('./authorizer');
 
 module.exports.get = (event, context, callback) => {
     console.log(event);
@@ -28,10 +29,7 @@ module.exports.get = (event, context, callback) => {
     const response = {
       statusCode: 200,
       body: JSON.stringify(result.Item),
-      headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Credentials': true,
-      },
+      headers: corsHeaders(event),
     };
     callback(null, response);
   });

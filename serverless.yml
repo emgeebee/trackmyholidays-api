@@ -21,6 +21,15 @@ custom:
     stages:
       - dev
       - prod
+  cors:
+    origins: ${file(./config/allowedOrigins.json)}
+    headers:
+      - Content-Type
+      - Authorization
+      - X-Amz-Date
+      - X-Api-Key
+      - X-Amz-Security-Token
+    allowCredentials: true
   authorizers:
     auth:
       name: authFunc
@@ -68,6 +77,7 @@ provider:
     DYNAMODB_TABLE: "holidays"
     STAGE: ${self:custom.myStage}
     GOOGLE_CLIENT_ID: ${env:GOOGLE_CLIENT_ID}
+    FAMTREE_GOOGLE_CLIENT_ID: ${env:FAMTREE_GOOGLE_CLIENT_ID, ''}
     TOKEN_SIGNING_SECRET: ${env:TOKEN_SIGNING_SECRET}
     TOKEN_EXPIRY: ${env:TOKEN_EXPIRY, '365d'}
     TOKENS_TABLE: tokens
@@ -144,7 +154,7 @@ functions:
       - http:
           path: holidays
           method: post
-          cors: true
+          cors: ${self:custom.cors}
           authorizer: ${self:custom.authorizers.auth}
 
   get:
@@ -153,7 +163,7 @@ functions:
       - http:
           path: holidays
           method: get
-          cors: true
+          cors: ${self:custom.cors}
           authorizer:
             name: authFunc
             identitySource: method.request.header.Authorization
@@ -164,7 +174,7 @@ functions:
       - http:
           path: holidays/{id}
           method: put
-          cors: true
+          cors: ${self:custom.cors}
           authorizer:
             name: authFunc
             identitySource: method.request.header.Authorization
@@ -175,7 +185,7 @@ functions:
       - http:
           path: generateToken
           method: post
-          cors: true
+          cors: ${self:custom.cors}
           authorizer:
             name: authFunc
             identitySource: method.request.header.Authorization
@@ -186,7 +196,7 @@ functions:
       - http:
           path: tokens
           method: get
-          cors: true
+          cors: ${self:custom.cors}
           authorizer:
             name: authFunc
             identitySource: method.request.header.Authorization
@@ -197,7 +207,7 @@ functions:
       - http:
           path: expireToken
           method: post
-          cors: true
+          cors: ${self:custom.cors}
           authorizer:
             name: authFunc
             identitySource: method.request.header.Authorization
@@ -208,7 +218,7 @@ functions:
       - http:
           path: docs
           method: post
-          cors: true
+          cors: ${self:custom.cors}
           authorizer:
             name: authFunc
             identitySource: method.request.header.Authorization
@@ -219,7 +229,7 @@ functions:
       - http:
           path: docs
           method: get
-          cors: true
+          cors: ${self:custom.cors}
           authorizer:
             name: authFunc
             identitySource: method.request.header.Authorization
@@ -230,7 +240,7 @@ functions:
       - http:
           path: docs/{id}
           method: get
-          cors: true
+          cors: ${self:custom.cors}
           authorizer:
             name: authFunc
             identitySource: method.request.header.Authorization
@@ -241,7 +251,7 @@ functions:
       - http:
           path: docs/{id}
           method: put
-          cors: true
+          cors: ${self:custom.cors}
           authorizer:
             name: authFunc
             identitySource: method.request.header.Authorization
@@ -252,7 +262,7 @@ functions:
       - http:
           path: docs/{id}
           method: delete
-          cors: true
+          cors: ${self:custom.cors}
           authorizer:
             name: authFunc
             identitySource: method.request.header.Authorization
