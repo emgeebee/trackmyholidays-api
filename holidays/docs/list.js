@@ -9,7 +9,7 @@ module.exports.list = async (event, context, callback) => {
   if (!userid) {
     callback(null, {
       statusCode: 401,
-      headers: corsHeaders(),
+      headers: corsHeaders(event),
       body: JSON.stringify({ message: 'Unauthorized: no user subject found.' }),
     });
     return;
@@ -19,14 +19,14 @@ module.exports.list = async (event, context, callback) => {
     const docs = await docStore.listDocs(userid);
     callback(null, {
       statusCode: 200,
-      headers: corsHeaders(),
+      headers: corsHeaders(event),
       body: JSON.stringify({ docs }),
     });
   } catch (err) {
     console.error(err);
     callback(null, {
       statusCode: 500,
-      headers: corsHeaders(),
+      headers: corsHeaders(event),
       body: JSON.stringify({ message: 'Failed to list documents.' }),
     });
   }

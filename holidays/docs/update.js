@@ -9,7 +9,7 @@ module.exports.update = async (event, context, callback) => {
   if (!userid) {
     callback(null, {
       statusCode: 401,
-      headers: corsHeaders(),
+      headers: corsHeaders(event),
       body: JSON.stringify({ message: 'Unauthorized: no user subject found.' }),
     });
     return;
@@ -19,7 +19,7 @@ module.exports.update = async (event, context, callback) => {
   if (!docStore.validateDocId(id)) {
     callback(null, {
       statusCode: 400,
-      headers: corsHeaders(),
+      headers: corsHeaders(event),
       body: JSON.stringify({ message: 'Invalid document id.' }),
     });
     return;
@@ -31,7 +31,7 @@ module.exports.update = async (event, context, callback) => {
   } catch (err) {
     callback(null, {
       statusCode: 400,
-      headers: corsHeaders(),
+      headers: corsHeaders(event),
       body: JSON.stringify({ message: 'Invalid request body.' }),
     });
     return;
@@ -42,7 +42,7 @@ module.exports.update = async (event, context, callback) => {
     if (!existing) {
       callback(null, {
         statusCode: 404,
-        headers: corsHeaders(),
+        headers: corsHeaders(event),
         body: JSON.stringify({ message: 'Document not found.' }),
       });
       return;
@@ -59,14 +59,14 @@ module.exports.update = async (event, context, callback) => {
     await docStore.putDoc(userid, id, doc);
     callback(null, {
       statusCode: 200,
-      headers: corsHeaders(),
+      headers: corsHeaders(event),
       body: JSON.stringify(doc),
     });
   } catch (err) {
     console.error(err);
     callback(null, {
       statusCode: 500,
-      headers: corsHeaders(),
+      headers: corsHeaders(event),
       body: JSON.stringify({ message: 'Failed to update document.' }),
     });
   }

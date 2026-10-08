@@ -1,5 +1,7 @@
 'use strict';
 
+const allowedOrigins = require('../config/allowedOrigins.json');
+
 // User id from the verified Authorization bearer token only (set by authFunc).
 function getAuthenticatedUserId(event) {
   const authorizer =
@@ -14,12 +16,21 @@ function getUserIdFromEvent(event) {
   return getAuthenticatedUserId(event);
 }
 
-function corsHeaders() {
-  return {
+function corsHeaders(event) {
+  const headers = (event && event.headers) || {};
+  const origin = headers.origin || headers.Origin;
+
+  const result = {
     'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Credentials': true,
+    Vary: 'Origin',
   };
+
+  if (origin && allowedOrigins.includes(origin)) {
+    result['Access-Control-Allow-Origin'] = origin;
+    result['Access-Control-Allow-Credentials'] = true;
+  }
+
+  return result;
 }
 
 module.exports = {

@@ -21,6 +21,15 @@ custom:
     stages:
       - dev
       - prod
+  cors:
+    origins: ${file(./config/allowedOrigins.json)}
+    headers:
+      - Content-Type
+      - Authorization
+      - X-Amz-Date
+      - X-Api-Key
+      - X-Amz-Security-Token
+    allowCredentials: true
   authorizers:
     auth:
       name: authFunc
@@ -45,6 +54,22 @@ custom:
           pathParam: asset
         cors: true
 
+package:
+  patterns:
+    - '!node_modules/aws-sdk/**'
+    - '!node_modules/@node-llama-cpp/**'
+    - '!node_modules/node-llama-cpp/**'
+    - '!node_modules/serverless/**'
+    - '!node_modules/serverless-*/**'
+    - '!node_modules/@serverless/**'
+    - '!node_modules/@types/**'
+    - '!.serverless/**'
+    - '!.dynamodb/**'
+    - '!offline/**'
+    - '!scripts/**'
+    - '!**/*.md'
+    - '!**/*.map'
+
 provider:
   name: aws
   runtime: nodejs20.x
@@ -52,11 +77,15 @@ provider:
     DYNAMODB_TABLE: "holidays"
     STAGE: ${self:custom.myStage}
     GOOGLE_CLIENT_ID: ${env:GOOGLE_CLIENT_ID}
+    FAMTREE_GOOGLE_CLIENT_ID: ${env:FAMTREE_GOOGLE_CLIENT_ID, ''}
     TOKEN_SIGNING_SECRET: ${env:TOKEN_SIGNING_SECRET}
     TOKEN_EXPIRY: ${env:TOKEN_EXPIRY, '365d'}
     TOKENS_TABLE: tokens
     DOCS_BUCKET:
       Ref: docStoreBucket
+    SERVICE_NAME: holidays
+    LOG_LOOKBACK: 7d
+    L3_AGENT_MODEL: ${env:L3_AGENT_MODEL, 'amazon.nova-lite-v1:0'}
   iamRoleStatements:
     - Effect: Allow
       Action:
@@ -94,6 +123,26 @@ provider:
             - - 'arn:aws:s3:::'
               - Ref: docStoreBucket
               - '/*'
+    - Effect: Allow
+      Action:
+        - logs:StartQuery
+        - logs:GetQueryResults
+        - logs:DescribeLogGroups
+        - logs:FilterLogEvents
+      Resource: "*"
+    - Effect: Allow
+      Action:
+        - bedrock:InvokeModel
+        - bedrock:InvokeModelWithResponseStream
+        - bedrock:Converse
+        - bedrock:ConverseStream
+      Resource: "*"
+    - Effect: Allow
+      Action:
+        - aws-marketplace:ViewSubscriptions
+        - aws-marketplace:Subscribe
+        - aws-marketplace:Unsubscribe
+      Resource: "*"
 
 functions:
   authFunc:
@@ -105,7 +154,7 @@ functions:
       - http:
           path: holidays
           method: post
-          cors: true
+          cors: ${self:custom.cors}
           authorizer: ${self:custom.authorizers.auth}
 
   get:
@@ -114,7 +163,7 @@ functions:
       - http:
           path: holidays
           method: get
-          cors: true
+          cors: ${self:custom.cors}
           authorizer:
             name: authFunc
             identitySource: method.request.header.Authorization
@@ -125,7 +174,7 @@ functions:
       - http:
           path: holidays/{id}
           method: put
-          cors: true
+          cors: ${self:custom.cors}
           authorizer:
             name: authFunc
             identitySource: method.request.header.Authorization
@@ -136,7 +185,7 @@ functions:
       - http:
           path: generateToken
           method: post
-          cors: true
+          cors: ${self:custom.cors}
           authorizer:
             name: authFunc
             identitySource: method.request.header.Authorization
@@ -147,7 +196,7 @@ functions:
       - http:
           path: tokens
           method: get
-          cors: true
+          cors: ${self:custom.cors}
           authorizer:
             name: authFunc
             identitySource: method.request.header.Authorization
@@ -158,7 +207,7 @@ functions:
       - http:
           path: expireToken
           method: post
-          cors: true
+          cors: ${self:custom.cors}
           authorizer:
             name: authFunc
             identitySource: method.request.header.Authorization
@@ -169,7 +218,7 @@ functions:
       - http:
           path: docs
           method: post
-          cors: true
+          cors: ${self:custom.cors}
           authorizer:
             name: authFunc
             identitySource: method.request.header.Authorization
@@ -180,7 +229,7 @@ functions:
       - http:
           path: docs
           method: get
-          cors: true
+          cors: ${self:custom.cors}
           authorizer:
             name: authFunc
             identitySource: method.request.header.Authorization
@@ -191,7 +240,7 @@ functions:
       - http:
           path: docs/{id}
           method: get
-          cors: true
+          cors: ${self:custom.cors}
           authorizer:
             name: authFunc
             identitySource: method.request.header.Authorization
@@ -202,7 +251,7 @@ functions:
       - http:
           path: docs/{id}
           method: put
-          cors: true
+          cors: ${self:custom.cors}
           authorizer:
             name: authFunc
             identitySource: method.request.header.Authorization
@@ -213,10 +262,20 @@ functions:
       - http:
           path: docs/{id}
           method: delete
-          cors: true
+          cors: ${self:custom.cors}
           authorizer:
             name: authFunc
             identitySource: method.request.header.Authorization
+
+  l3Agent:
+    handler: agents/l3Agent.l3Agent
+    timeout: 300
+    memorySize: 512
+    events:
+      - schedule:
+          name: l3Agent
+          rate: rate(7 days)
+          enabled: true
 
 resources:
   Resources:

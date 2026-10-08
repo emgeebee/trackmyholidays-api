@@ -9,7 +9,7 @@ module.exports.expireToken = async (event, context, callback) => {
   if (!userid) {
     callback(null, {
       statusCode: 401,
-      headers: corsHeaders(),
+      headers: corsHeaders(event),
       body: JSON.stringify({ message: 'Unauthorized: no user subject found.' }),
     });
     return;
@@ -21,7 +21,7 @@ module.exports.expireToken = async (event, context, callback) => {
   } catch (err) {
     callback(null, {
       statusCode: 400,
-      headers: corsHeaders(),
+      headers: corsHeaders(event),
       body: JSON.stringify({ message: 'Invalid request body.' }),
     });
     return;
@@ -30,7 +30,7 @@ module.exports.expireToken = async (event, context, callback) => {
   if (!body.token || typeof body.token !== 'string') {
     callback(null, {
       statusCode: 400,
-      headers: corsHeaders(),
+      headers: corsHeaders(event),
       body: JSON.stringify({ message: 'Missing token in request body.' }),
     });
     return;
@@ -42,7 +42,7 @@ module.exports.expireToken = async (event, context, callback) => {
     if (!result.ok) {
       callback(null, {
         statusCode: result.statusCode,
-        headers: corsHeaders(),
+        headers: corsHeaders(event),
         body: JSON.stringify({ message: result.message }),
       });
       return;
@@ -50,14 +50,14 @@ module.exports.expireToken = async (event, context, callback) => {
 
     callback(null, {
       statusCode: 200,
-      headers: corsHeaders(),
+      headers: corsHeaders(event),
       body: JSON.stringify({ message: 'Token expired.' }),
     });
   } catch (err) {
     console.error(err);
     callback(null, {
       statusCode: 500,
-      headers: corsHeaders(),
+      headers: corsHeaders(event),
       body: JSON.stringify({ message: 'Failed to expire token.' }),
     });
   }

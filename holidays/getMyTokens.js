@@ -10,7 +10,7 @@ module.exports.getMyTokens = async (event, context, callback) => {
   if (!userid) {
     callback(null, {
       statusCode: 401,
-      headers: corsHeaders(),
+      headers: corsHeaders(event),
       body: JSON.stringify({ message: 'Unauthorized: no user subject found.' }),
     });
     return;
@@ -20,14 +20,14 @@ module.exports.getMyTokens = async (event, context, callback) => {
     const tokens = await tokenStore.getTokensForUser(userid);
     callback(null, {
       statusCode: 200,
-      headers: corsHeaders(),
+      headers: corsHeaders(event),
       body: JSON.stringify({ tokens }),
     });
   } catch (err) {
     console.error(err);
     callback(null, {
       statusCode: 500,
-      headers: corsHeaders(),
+      headers: corsHeaders(event),
       body: JSON.stringify({ message: 'Failed to fetch tokens.' }),
     });
   }

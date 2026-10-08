@@ -2,6 +2,7 @@
 
 const uuid = require('uuid');
 const dynamoDb = require('./dynamodb');
+const { corsHeaders } = require('./authorizer');
 
 module.exports.create = (event, context, callback) => {
   const timestamp = new Date().getTime();
@@ -44,10 +45,7 @@ module.exports.create = (event, context, callback) => {
     const response = {
       statusCode: 200,
       body: JSON.stringify(params.Item),
-      headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Credentials': true,
-      },
+      headers: corsHeaders(event),
     };
     callback(null, response);
   });

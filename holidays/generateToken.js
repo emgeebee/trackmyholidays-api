@@ -11,7 +11,7 @@ module.exports.generateToken = async (event, context, callback) => {
   if (!TOKEN_SIGNING_SECRET) {
     callback(null, {
       statusCode: 500,
-      headers: corsHeaders(),
+      headers: corsHeaders(event),
       body: JSON.stringify({
         message: "Missing TOKEN_SIGNING_SECRET configuration.",
       }),
@@ -24,7 +24,7 @@ module.exports.generateToken = async (event, context, callback) => {
   if (!sub) {
     callback(null, {
       statusCode: 401,
-      headers: corsHeaders(),
+      headers: corsHeaders(event),
       body: JSON.stringify({ message: "Unauthorized: no user subject found." }),
     });
     return;
@@ -45,7 +45,7 @@ module.exports.generateToken = async (event, context, callback) => {
     console.error(err);
     callback(null, {
       statusCode: 500,
-      headers: corsHeaders(),
+      headers: corsHeaders(event),
       body: JSON.stringify({ message: "Failed to store token." }),
     });
     return;
@@ -53,7 +53,7 @@ module.exports.generateToken = async (event, context, callback) => {
 
   callback(null, {
     statusCode: 200,
-    headers: corsHeaders(),
+    headers: corsHeaders(event),
     body: JSON.stringify({
       token,
       sub,

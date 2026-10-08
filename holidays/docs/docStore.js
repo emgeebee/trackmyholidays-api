@@ -2,12 +2,18 @@
 
 const fs = require('fs').promises;
 const path = require('path');
-const AWS = require('aws-sdk'); // eslint-disable-line import/no-extraneous-dependencies
+const {
+  S3Client,
+  GetObjectCommand,
+  PutObjectCommand,
+  DeleteObjectCommand,
+  ListObjectsV2Command,
+} = require('@aws-sdk/client-s3');
 
 const BUCKET = process.env.DOCS_BUCKET;
 const PREFIX = 'docs';
 const LOCAL_ROOT = path.join(__dirname, '../../offline/docs');
-const s3 = new AWS.S3();
+const s3 = new S3Client({});
 
 function s3Key(userid, id) {
   return `${PREFIX}/${userid}/${id}.json`;
@@ -19,6 +25,21 @@ function localPath(userid, id) {
 
 function validateDocId(id) {
   return typeof id === 'string' && /^[a-zA-Z0-9_-]+$/.test(id);
+}
+
+async function streamToString(body) {
+  if (!body) {
+    return '';
+  }
+  if (typeof body.transformToString === 'function') {
+    return body.transformToString();
+  }
+
+  const chunks = [];
+  for await (const chunk of body) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks).toString('utf8');
 }
 
 async function getDoc(userid, id) {
@@ -35,12 +56,12 @@ async function getDoc(userid, id) {
   }
 
   try {
-    const result = await s3
-      .getObject({ Bucket: BUCKET, Key: s3Key(userid, id) })
-      .promise();
-    return JSON.parse(result.Body.toString());
+    const result = await s3.send(
+      new GetObjectCommand({ Bucket: BUCKET, Key: s3Key(userid, id) })
+    );
+    return JSON.parse(await streamToString(result.Body));
   } catch (err) {
-    if (err.code === 'NoSuchKey') {
+    if (err.name === 'NoSuchKey' || err.$metadata?.httpStatusCode === 404) {
       return null;
     }
     throw err;
@@ -57,14 +78,14 @@ async function putDoc(userid, id, doc) {
     return;
   }
 
-  await s3
-    .putObject({
+  await s3.send(
+    new PutObjectCommand({
       Bucket: BUCKET,
       Key: s3Key(userid, id),
       Body: body,
       ContentType: 'application/json',
     })
-    .promise();
+  );
 }
 
 async function deleteDoc(userid, id) {
@@ -79,9 +100,9 @@ async function deleteDoc(userid, id) {
     return;
   }
 
-  await s3
-    .deleteObject({ Bucket: BUCKET, Key: s3Key(userid, id) })
-    .promise();
+  await s3.send(
+    new DeleteObjectCommand({ Bucket: BUCKET, Key: s3Key(userid, id) })
+  );
 }
 
 async function listDocs(userid) {
@@ -106,12 +127,12 @@ async function listDocs(userid) {
     }
   }
 
-  const result = await s3
-    .listObjectsV2({
+  const result = await s3.send(
+    new ListObjectsV2Command({
       Bucket: BUCKET,
       Prefix: `${PREFIX}/${userid}/`,
     })
-    .promise();
+  );
 
   if (!result.Contents || result.Contents.length === 0) {
     return [];
@@ -119,10 +140,10 @@ async function listDocs(userid) {
 
   const docs = await Promise.all(
     result.Contents.map(async (item) => {
-      const object = await s3
-        .getObject({ Bucket: BUCKET, Key: item.Key })
-        .promise();
-      return JSON.parse(object.Body.toString());
+      const object = await s3.send(
+        new GetObjectCommand({ Bucket: BUCKET, Key: item.Key })
+      );
+      return JSON.parse(await streamToString(object.Body));
     })
   );
 

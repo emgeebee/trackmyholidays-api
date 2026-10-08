@@ -5,18 +5,19 @@ const jwt = require("jsonwebtoken");
 const tokenStore = require("../holidays/tokenStore");
 
 // app's client IDs to check with audience in ID Token.
-var CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const CLIENT_IDS = [
+  process.env.GOOGLE_CLIENT_ID,
+  process.env.FAMTREE_GOOGLE_CLIENT_ID,
+].filter(Boolean);
 const TOKEN_SIGNING_SECRET = process.env.TOKEN_SIGNING_SECRET;
 const { OAuth2Client } = require("google-auth-library");
-const client = new OAuth2Client(CLIENT_ID);
+const client = new OAuth2Client();
 
 async function verify(token) {
   try {
     const ticket = await client.verifyIdToken({
       idToken: token,
-      audience: CLIENT_ID, // Specify the CLIENT_ID of the app that accesses the backend
-      // Or, if multiple clients access the backend:
-      //[CLIENT_ID_1, CLIENT_ID_2, CLIENT_ID_3]
+      audience: CLIENT_IDS,
     });
     const payload = ticket.getPayload();
     return payload.sub;
