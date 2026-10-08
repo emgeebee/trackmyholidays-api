@@ -278,7 +278,7 @@ functions:
     memorySize: 512
     events:
       - schedule:
-          name: l3Agent
+          name: ${self:service}-${self:custom.myStage}-l3Agent
           rate: rate(7 days)
           enabled: true
 
