@@ -20,7 +20,7 @@ async function verify(token) {
       audience: CLIENT_IDS,
     });
     const payload = ticket.getPayload();
-    return payload.sub;
+    return identityFromPayload(payload);
   } catch (googleErr) {
     if (!TOKEN_SIGNING_SECRET) {
       throw googleErr;
@@ -36,12 +36,28 @@ async function verify(token) {
       throw new Error("Token is not registered");
     }
 
-    return storedSub;
+    return identityFromPayload(payload);
   }
 }
 
+function identityFromPayload(payload) {
+  return {
+    uid: payload.sub,
+    email: payload.email,
+    name: payload.name,
+  };
+}
+
 // A function to generate a response from Authorizer to API Gateway.
-function generate_policy(principal_id, effect, resource, uid) {
+function generate_policy(principal_id, effect, resource, identity) {
+  // API Gateway rejects authorizer context values that are not strings, numbers or booleans.
+  const context = {};
+  for (const [key, value] of Object.entries(identity)) {
+    if (typeof value === "string" && value) {
+      context[key] = value;
+    }
+  }
+
   return {
     principalId: principal_id,
     policyDocument: {
@@ -55,9 +71,7 @@ function generate_policy(principal_id, effect, resource, uid) {
         },
       ],
     },
-    context: {
-      uid,
-    },
+    context,
   };
 }
 
@@ -73,9 +87,9 @@ module.exports.authorizer = (event, context, callback) => {
   }
 
   verify(token)
-    .then((uid) => {
+    .then((identity) => {
       console.log("eee", event.methodArn);
-      callback(null, generate_policy(uid, "Allow", event.methodArn, uid));
+      callback(null, generate_policy(identity.uid, "Allow", event.methodArn, identity));
     })
     .catch((err) => {
       console.error(err);

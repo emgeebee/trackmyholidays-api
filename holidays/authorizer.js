@@ -12,6 +12,19 @@ function getAuthenticatedUserId(event) {
   return authorizer.uid || authorizer.principalId || null;
 }
 
+function getAuthenticatedIdentity(event) {
+  const authorizer =
+    event.requestContext && event.requestContext.authorizer
+      ? event.requestContext.authorizer
+      : {};
+
+  return {
+    uid: getAuthenticatedUserId(event),
+    email: authorizer.email || null,
+    name: authorizer.name || null,
+  };
+}
+
 function getUserIdFromEvent(event) {
   return getAuthenticatedUserId(event);
 }
@@ -35,6 +48,7 @@ function corsHeaders(event) {
 
 module.exports = {
   getAuthenticatedUserId,
+  getAuthenticatedIdentity,
   getUserIdFromEvent,
   corsHeaders,
 };
