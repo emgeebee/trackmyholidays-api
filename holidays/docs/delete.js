@@ -2,6 +2,7 @@
 
 const { getAuthenticatedUserId, corsHeaders } = require('../authorizer');
 const docStore = require('./docStore');
+const shareStore = require('./shareStore');
 
 module.exports.delete = async (event, context, callback) => {
   const userid = getAuthenticatedUserId(event);
@@ -36,6 +37,7 @@ module.exports.delete = async (event, context, callback) => {
       return;
     }
 
+    await shareStore.deleteSharesForDoc(userid, id);
     await docStore.deleteDoc(userid, id);
     callback(null, {
       statusCode: 200,
