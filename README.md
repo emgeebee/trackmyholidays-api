@@ -1,320 +1,266 @@
-<!--
-title: 'AWS Serverless REST API example in NodeJS'
-description: 'This example demonstrates how to setup a RESTful Web Service allowing you to create, list, get, update and delete Todos. DynamoDB is used to store the data.'
-layout: Doc
-framework: v1
-platform: AWS
-language: nodeJS
-authorLink: 'https://github.com/ozbillwang'
-authorName: 'Bill Wang'
-authorAvatar: 'https://avatars3.githubusercontent.com/u/8954908?v=4&s=140'
--->
-# Serverless REST API
+# trackmyholidays-api
 
+Serverless backend for [Track My Holidays](https://trackmyholidays.com) and [famtree](https://famtree.buzz). It runs on AWS Lambda behind API Gateway (Serverless Framework v3, Node 22, `us-west-2`) and provides:
 
-This example demonstrates how to setup a [RESTful Web Services](https://en.wikipedia.org/wiki/Representational_state_transfer#Applied_to_web_services) allowing you to create, list, get, update and delete Todos. DynamoDB is used to store the data. This is just an example and of course you could use any data storage as a backend.
+- a per-user holidays record (DynamoDB)
+- long-lived API tokens, as an alternative to Google ID tokens
+- generic JSON document storage (S3), with read-only share links
+- a weekly agent that scans the service's CloudWatch logs and writes an error report
 
-## Structure
+## Base URLs
 
-This service has a separate directory for all the todo operations. For each operation exactly one file exists e.g. `todos/delete.js`. In each of these files there is exactly one function which is directly attached to `module.exports`.
+| Stage | Base URL |
+|---|---|
+| prod | `https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod` |
+| dev | Each stage has its own API id. Run `npx serverless info --stage dev --aws-profile main`, or see the "Get API URL" step of a PR's deploy run. |
 
-The idea behind the `todos` directory is that in case you want to create a service containing multiple resources e.g. users, notes, comments you could do so in the same service. While this is certainly possible you might consider creating a separate service for each resource. It depends on the use-case and your preference.
-
-## Use-cases
-
-- API for a Web Application
-- API for a Mobile Application
-
-## Setup
+The examples below assume:
 
 ```bash
-npm install
+API=https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod
+TOKEN=<google-id-token-or-long-lived-token>
 ```
 
-## Deploy
+## Authentication
 
-Deploys run through GitHub Actions: pull requests deploy to `dev`, pushes to `main` deploy to `prod`.
+Every endpoint except `GET /version` and the static files needs an `Authorization: Bearer <token>` header. The token can be:
 
-The expected result should be similar to:
+- a **Google ID token** issued for one of the configured client ids (Track My Holidays or famtree), or
+- a **long-lived token** from `POST /generateToken`, which authenticates as the same Google user.
 
-```bash
-Service Information
-service: holidays
-stage: prod
-region: us-west-2
-endpoints:
-  POST - https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/holidays
-  GET - https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/holidays
-  PUT - https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/holidays/{id}
-  POST - https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/generateToken
-  GET - https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/tokens
-  POST - https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/expireToken
-  POST - https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs
-  GET - https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs
-  GET - https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs/{id}
-  PUT - https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs/{id}
-  DELETE - https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs/{id}
-  POST - https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs/{id}/shares
-  GET - https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs/{id}/shares
-  DELETE - https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs/{id}/shares/{code}
-  GET - https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/shared/{code}
-```
+The user id is always taken from the token, never from the URL or body, so users can only reach their own data. Missing or invalid tokens get `401 {"message":"Unauthorized"}`.
 
-## Usage
+API responses only include CORS headers for the origins listed in [`config/allowedOrigins.json`](config/allowedOrigins.json).
 
-Every endpoint requires an `Authorization: Bearer <token>` header. The token can be either a Google ID token or a long-lived token from `POST /generateToken`. The user id always comes from the token, never from the URL or body.
+## Endpoints
 
-The examples below use the prod base URL. Swap `/prod` for `/dev` to hit the dev stage.
-
-### Holidays
-
-#### Save holidays
-
-The whole request body is stored as the user's holidays record.
-
-```bash
-curl -X POST https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/holidays \
-  -H 'authorization: Bearer <token>' \
-  -H 'content-type: application/json' \
-  -d '{ "allowance": 25, "booked": ["2026-12-24", "2026-12-31"] }'
-```
-
-Example Result:
-```bash
-{"id":"103501357127260947071","text":{"allowance":25,"booked":["2026-12-24","2026-12-31"]},"checked":false,"createdAt":1791460800000,"updatedAt":1791460800000}
-```
-
-#### Get holidays
-
-```bash
-curl https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/holidays \
-  -H 'authorization: Bearer <token>'
-```
-
-Example Result:
-```bash
-{"id":"103501357127260947071","text":{"allowance":25,"booked":["2026-12-24","2026-12-31"]},"checked":false,"createdAt":1791460800000,"updatedAt":1791460800000}
-```
-
-#### Update holidays
-
-```bash
-curl -X PUT https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/holidays/<id> \
-  -H 'authorization: Bearer <token>' \
-  -H 'content-type: application/json' \
-  -d '{ "text": "Updated holidays", "checked": true }'
-```
-
-### Tokens
-
-#### Generate a long-lived token
-
-Call this with a Google ID token. The returned token authenticates as the same user.
-
-```bash
-curl -X POST https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/generateToken \
-  -H 'authorization: Bearer <google-id-token>'
-```
-
-Example Result:
-```bash
-{"token":"eyJhbGciOiJIUzI1NiIs...","sub":"103501357127260947071","expiresIn":"365d","expiresAt":"2027-10-08T18:00:00.000Z"}
-```
-
-#### List my tokens
-
-```bash
-curl https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/tokens \
-  -H 'authorization: Bearer <token>'
-```
-
-Example Result:
-```bash
-{"tokens":[{"token":"eyJhbGciOiJIUzI1NiIs...","userid":"103501357127260947071","createdAt":"2026-10-08T18:00:00.000Z","expiresAt":"2027-10-08T18:00:00.000Z"}]}
-```
-
-#### Expire a token
-
-```bash
-curl -X POST https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/expireToken \
-  -H 'authorization: Bearer <token>' \
-  -H 'content-type: application/json' \
-  -d '{ "token": "<token-to-expire>" }'
-```
-
-Example Result:
-```bash
-{"message":"Token expired."}
-```
-
-### Documents
-
-Documents are stored as JSON in S3 at `docs/<userid>/<id>.json`. Ids may only contain letters, numbers, `_` and `-`.
-
-#### Create a document
-
-`id` is optional; one is generated if omitted.
-
-```bash
-curl -X POST https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs \
-  -H 'authorization: Bearer <token>' \
-  -H 'content-type: application/json' \
-  -d '{ "id": "summer-trip", "title": "Summer holiday", "data": { "destination": "Spain", "days": 10 } }'
-```
-
-Example Result:
-```bash
-{"id":"summer-trip","title":"Summer holiday","data":{"destination":"Spain","days":10},"createdAt":"2026-10-08T18:00:00.000Z","updatedAt":"2026-10-08T18:00:00.000Z"}
-```
-
-#### List my documents
-
-```bash
-curl https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs \
-  -H 'authorization: Bearer <token>'
-```
-
-Example Result:
-```bash
-{"docs":[{"id":"summer-trip","title":"Summer holiday","data":{"destination":"Spain","days":10},"createdAt":"2026-10-08T18:00:00.000Z","updatedAt":"2026-10-08T18:00:00.000Z"}]}
-```
-
-#### Get one document
-
-```bash
-curl https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs/summer-trip \
-  -H 'authorization: Bearer <token>'
-```
-
-#### Update a document
-
-The body replaces the document's fields; `createdAt` is preserved.
-
-```bash
-curl -X PUT https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs/summer-trip \
-  -H 'authorization: Bearer <token>' \
-  -H 'content-type: application/json' \
-  -d '{ "title": "Summer holiday (updated)", "data": { "destination": "Spain", "days": 12 } }'
-```
-
-#### Delete a document
-
-```bash
-curl -X DELETE https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs/summer-trip \
-  -H 'authorization: Bearer <token>'
-```
-
-Example Result:
-```bash
-{"message":"Document deleted."}
-```
-
-Deleting a document also revokes all of its share links.
-
-### Sharing documents
-
-The owner creates a share link code for a document. Anyone signed in who has the code can read the document, but not change it. Only the owner can list or revoke codes, and see who has opened each one.
-
-#### Create a share link
-
-```bash
-curl -X POST https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs/summer-trip/shares \
-  -H 'authorization: Bearer <token>'
-```
-
-Example Result:
-```bash
-{"code":"q3Zr8kP1xW9vYbT2nLm4sA0d","docId":"summer-trip","permission":"read","createdAt":"2026-10-08T18:00:00.000Z","accessedBy":[]}
-```
-
-#### List a document's share links
-
-```bash
-curl https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs/summer-trip/shares \
-  -H 'authorization: Bearer <token>'
-```
-
-Example Result:
-```bash
-[{"code":"q3Zr8kP1xW9vYbT2nLm4sA0d","docId":"summer-trip","permission":"read","createdAt":"2026-10-08T18:00:00.000Z","accessedBy":[{"userid":"117283546120394857261","email":"friend@example.com","name":"A Friend","firstAccessedAt":"2026-10-08T19:00:00.000Z","lastAccessedAt":"2026-10-09T08:30:00.000Z","accessCount":3}]}]
-```
-
-`accessedBy` lists everyone other than the owner who has opened the link. `email` and `name` come from their Google sign-in; long-lived tokens only include them if they were generated after this was added.
-
-#### Revoke a share link
-
-```bash
-curl -X DELETE https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/docs/summer-trip/shares/q3Zr8kP1xW9vYbT2nLm4sA0d \
-  -H 'authorization: Bearer <token>'
-```
-
-Example Result:
-```bash
-{"message":"Share link revoked."}
-```
-
-#### Open a shared document
-
-Called by the person the link was shared with, using their own token.
-
-```bash
-curl https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/shared/q3Zr8kP1xW9vYbT2nLm4sA0d \
-  -H 'authorization: Bearer <their-token>'
-```
-
-Example Result:
-```bash
-{"permission":"read","doc":{"id":"summer-trip","title":"Summer holiday","data":{"destination":"Spain","days":10},"createdAt":"2026-10-08T18:00:00.000Z","updatedAt":"2026-10-08T18:00:00.000Z"}}
-```
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/version` | Package version, commit and stage. No token needed. |
+| `GET` | `/holidays` | Get my holidays record |
+| `POST` | `/holidays` | Save my holidays record |
+| `PUT` | `/holidays/{id}` | Update my holidays record (currently broken, see below) |
+| `POST` | `/generateToken` | Create a long-lived token for me |
+| `GET` | `/tokens` | List my long-lived tokens |
+| `POST` | `/expireToken` | Expire one of my tokens |
+| `POST` | `/docs` | Create a document |
+| `GET` | `/docs` | List my documents |
+| `GET` | `/docs/{id}` | Get one of my documents |
+| `PUT` | `/docs/{id}` | Replace one of my documents |
+| `DELETE` | `/docs/{id}` | Delete one of my documents and its share links |
+| `POST` | `/docs/{id}/shares` | Create a share link for my document |
+| `GET` | `/docs/{id}/shares` | List my document's share links and who opened them |
+| `DELETE` | `/docs/{id}/shares/{code}` | Revoke a share link |
+| `GET` | `/shared/{code}` | Open a document someone shared with me (read-only) |
+| `GET` | `/`, `/{asset}` | Static files from the stage's static files bucket. No token needed. |
 
 ### Version
 
-Public, no token needed. Reports the commit the stage is running.
-
 ```bash
-curl https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/version
+curl $API/version
 ```
 
-Example Result:
+```json
+{"version":"2.0.0","commit":"1a27cc8…","stage":"prod"}
+```
+
+### Holidays
+
+Each user has a single holidays record. `POST` stores the whole request body under `text`.
+
 ```bash
-{"version":"2.0.0","commit":"9dcc018...","stage":"prod"}
+curl -X POST $API/holidays \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"allowance":25,"booked":["2026-12-24","2026-12-31"]}'
+```
+
+```json
+{"id":"103501357127260947071","text":{"allowance":25,"booked":["2026-12-24","2026-12-31"]},"checked":false,"createdAt":1791460800000,"updatedAt":1791460800000}
+```
+
+```bash
+curl $API/holidays -H "Authorization: Bearer $TOKEN"
+```
+
+`GET` returns the same record, or an empty body if none has been saved yet.
+
+`PUT /holidays/{id}` is a leftover from the original to-do template. It only accepts `{"text": "<string>", "checked": <boolean>}` and doesn't currently find the user's record, so use `POST` to save changes instead.
+
+### Long-lived tokens
+
+Generate one while signed in with a Google ID token. It lasts 365 days by default, set by `TOKEN_EXPIRY`.
+
+```bash
+curl -X POST $API/generateToken -H "Authorization: Bearer $GOOGLE_ID_TOKEN"
+```
+
+```json
+{"token":"eyJhbGciOiJIUzI1NiIs…","sub":"103501357127260947071","expiresIn":"365d","expiresAt":"2027-10-08T18:00:00.000Z"}
+```
+
+List and expire tokens:
+
+```bash
+curl $API/tokens -H "Authorization: Bearer $TOKEN"
+
+curl -X POST $API/expireToken \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"token":"<token-to-expire>"}'
+```
+
+```json
+{"tokens":[{"token":"eyJhbGciOiJIUzI1NiIs…","userid":"103501357127260947071","createdAt":"2026-10-08T18:00:00.000Z","expiresAt":"2027-10-08T18:00:00.000Z"}]}
+{"message":"Token expired."}
+```
+
+`expireToken` returns `400` without a `token`, `404` for an unknown token and `403` for someone else's. API Gateway caches authorizer results for up to five minutes, so an expired token can keep working briefly.
+
+### Documents
+
+Documents are arbitrary JSON objects stored in S3 at `docs/<userid>/<id>.json`. Ids may only contain letters, numbers, `_` and `-` (otherwise `400`).
+
+```bash
+# Create (id is optional; a UUID is generated if omitted). 409 if the id already exists.
+curl -X POST $API/docs \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"id":"summer-trip","title":"Summer holiday","data":{"destination":"Spain","days":10}}'
+
+# List, get
+curl $API/docs -H "Authorization: Bearer $TOKEN"
+curl $API/docs/summer-trip -H "Authorization: Bearer $TOKEN"
+
+# Replace (keeps createdAt). 404 if it doesn't exist.
+curl -X PUT $API/docs/summer-trip \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Summer holiday","data":{"destination":"Spain","days":12}}'
+
+# Delete (also revokes its share links)
+curl -X DELETE $API/docs/summer-trip -H "Authorization: Bearer $TOKEN"
+```
+
+A document as returned by create, get and update; list wraps them as `{"docs":[…]}`:
+
+```json
+{"id":"summer-trip","title":"Summer holiday","data":{"destination":"Spain","days":10},"createdAt":"2026-10-08T18:00:00.000Z","updatedAt":"2026-10-08T18:00:00.000Z"}
+```
+
+### Sharing documents
+
+The owner creates a share code for a document. Anyone signed in who has the code can read the document, but not change it. Only the owner can list or revoke codes, and see who has opened each one. Opening your own link isn't recorded.
+
+```bash
+# Owner: create, list and revoke share links
+curl -X POST $API/docs/summer-trip/shares -H "Authorization: Bearer $TOKEN"
+curl $API/docs/summer-trip/shares -H "Authorization: Bearer $TOKEN"
+curl -X DELETE $API/docs/summer-trip/shares/<code> -H "Authorization: Bearer $TOKEN"
+
+# Anyone signed in with the code
+curl $API/shared/<code> -H "Authorization: Bearer $THEIR_TOKEN"
+```
+
+Listing share links:
+
+```json
+[{"code":"q3Zr8kP1xW9vYbT2nLm4sA0d","docId":"summer-trip","permission":"read","createdAt":"2026-10-08T18:00:00.000Z",
+  "accessedBy":[{"userid":"117283546120394857261","email":"friend@example.com","name":"A Friend","firstAccessedAt":"2026-10-08T19:00:00.000Z","lastAccessedAt":"2026-10-09T08:30:00.000Z","accessCount":3}]}]
+```
+
+Opening a shared document:
+
+```json
+{"permission":"read","doc":{"id":"summer-trip","title":"Summer holiday","data":{"destination":"Spain","days":10},"createdAt":"2026-10-08T18:00:00.000Z","updatedAt":"2026-10-08T18:00:00.000Z"}}
+```
+
+`email` and `name` in `accessedBy` come from the visitor's Google sign-in. Long-lived tokens generated before access tracking was added don't carry them.
+
+## Log report agent
+
+`l3Agent` runs every 7 days. It uses a [Strands](https://strandsagents.com) agent on Amazon Bedrock (default model `amazon.nova-lite-v1:0`, set by `L3_AGENT_MODEL`) to query the service's CloudWatch logs for the last 7 days. It saves a markdown report of errors and anything unusual to the document bucket under `reports/`.
+
+## Development
+
+```bash
+npm install
+npm start            # serverless-offline on http://localhost:3001
+```
+
+`npm start` runs the API locally. It needs DynamoDB Local, managed by `serverless-dynamodb-local`, with tables created from `offline/migrations`. Documents are written to `offline/docs` instead of S3.
+
+### Configuration
+
+Set as environment variables at deploy time:
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `GOOGLE_CLIENT_ID` | yes | Google OAuth client id for Track My Holidays |
+| `FAMTREE_GOOGLE_CLIENT_ID` | no | Google OAuth client id for famtree |
+| `TOKEN_SIGNING_SECRET` | yes | Secret used to sign long-lived tokens |
+| `TOKEN_EXPIRY` | no | Long-lived token lifetime, default `365d` |
+| `L3_AGENT_MODEL` | no | Bedrock model for the log report agent |
+| `GIT_SHA` | no | Commit reported by `/version`, set by CI |
+
+Allowed CORS origins live in [`config/allowedOrigins.json`](config/allowedOrigins.json).
+
+### Resources per stage
+
+| Resource | Name |
+|---|---|
+| Holidays table | `holidays-<stage>` (not managed by this stack) |
+| Tokens table | `tokens-<stage>` |
+| Share links table | `docShares-<stage>` |
+| Document bucket | generated name (`docStoreBucket`) |
+
+## Deployment
+
+Deploys run in GitHub Actions ([`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)):
+
+- **Pull requests** deploy to `dev` and then run the live tests.
+- **Pushes to `main`** deploy to `prod`.
+
+Each GitHub environment (`dev`, `prod`) needs:
+
+- variables `GOOGLE_CLIENT_ID` and `FAMTREE_GOOGLE_CLIENT_ID`
+- secrets `TOKEN_SIGNING_SECRET`, `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`
+
+To deploy by hand:
+
+```bash
+GOOGLE_CLIENT_ID=… TOKEN_SIGNING_SECRET=… \
+  npx serverless deploy --stage dev --aws-profile main -r us-west-2
 ```
 
 ## Live tests
 
-Every PR deploys to the dev stage and then runs the tests in `tests/live` against the real dev API. Before the tests start, `GET /version` is polled until it reports the PR's head commit, so the tests can't run against an older deployment.
+After each PR deploys to dev, the workflow runs the tests in [`tests/live`](tests/live) against the real dev API:
 
-No stored token is needed. The runner invokes the stage's deployed `generateToken` Lambda directly as a dedicated `live-test-user`, runs the tests, and then invokes `expireToken` to remove the token, whether the tests pass or fail. The AWS user running the tests needs `lambda:InvokeFunction` on `holidays-<stage>-generateToken` and `holidays-<stage>-expireToken`.
+1. It polls `GET /version` until the API reports the PR's commit, so the tests never run against an older deployment.
+2. It invokes the deployed `generateToken` Lambda directly to get a token for a dedicated `live-test-user`.
+3. It runs the tests. Each step is its own test, and steps whose setup failed are skipped with a reason.
+4. It invokes `expireToken` to remove the token, whether the tests passed or not. The tests also delete any documents they create.
 
-To run them yourself against any stage, either let the runner create a token:
+The AWS user running the tests needs `lambda:InvokeFunction` on `holidays-<stage>-generateToken` and `holidays-<stage>-expireToken`.
+
+To run them yourself:
 
 ```bash
-API_URL=https://<api-id>.execute-api.us-west-2.amazonaws.com/dev \
-STAGE=dev \
-AWS_PROFILE=main AWS_REGION=us-west-2 \
-npm run test:live
+API_URL=<dev base url> STAGE=dev AWS_PROFILE=main AWS_REGION=us-west-2 npm run test:live
 ```
 
-or pass in any token you already have with `LIVE_TEST_TOKEN=<token>`. Add `EXPECTED_COMMIT=<sha>` to wait for a particular deployment first.
+Set `LIVE_TEST_TOKEN=<token>` to use your own token instead of creating one. Set `EXPECTED_COMMIT=<sha>` to wait for a particular deployment first.
 
-The tests create and delete their own documents and tokens, so they leave nothing behind.
+## Project structure
 
-## Scaling
-
-### AWS Lambda
-
-By default, AWS Lambda limits the total concurrent executions across all functions within a given region to 100. The default limit is a safety limit that protects you from costs due to potential runaway or recursive functions during initial development and testing. To increase this limit above the default, follow the steps in [To request a limit increase for concurrent executions](http://docs.aws.amazon.com/lambda/latest/dg/concurrent-executions.html#increase-concurrent-executions-limit).
-
-### DynamoDB
-
-When you create a table, you specify how much provisioned throughput capacity you want to reserve for reads and writes. DynamoDB will reserve the necessary resources to meet your throughput needs while ensuring consistent, low-latency performance. You can change the provisioned throughput and increasing or decreasing capacity as needed.
-
-This is can be done via settings in the `serverless.yml`.
-
-```yaml
-  ProvisionedThroughput:
-    ReadCapacityUnits: 1
-    WriteCapacityUnits: 1
 ```
-
-In case you expect a lot of traffic fluctuation we recommend to checkout this guide on how to auto scale DynamoDB [https://aws.amazon.com/blogs/aws/auto-scale-dynamodb-with-dynamic-dynamodb/](https://aws.amazon.com/blogs/aws/auto-scale-dynamodb-with-dynamic-dynamodb/)
+auth/auth.js            API Gateway authorizer (Google ID tokens and long-lived tokens)
+holidays/               holidays, tokens and version handlers, plus shared helpers
+holidays/docs/          document and share link handlers and their S3/DynamoDB stores
+agents/l3Agent.js       scheduled log report agent
+config/                 allowed CORS origins
+offline/migrations/     DynamoDB Local table definitions for `npm start`
+tests/live/             post-deploy live API tests
+serverless.yml          functions, routes, IAM and resources
+```
