@@ -21,9 +21,9 @@
   },
   "devDependencies": {
     "@aws-sdk/client-lambda": "^3.1149.0",
-    "serverless": "^3.40.0",
+    "serverless": "^4.43.0",
     "serverless-api-gateway-throttling": "^2.0.3",
     "serverless-dynamodb-local": "^0.2.40",
-    "serverless-offline": "^13.10.1"
+    "serverless-offline": "^14.8.3"
   }
 }
