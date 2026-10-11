@@ -284,21 +284,19 @@ Example Result:
 
 Every PR deploys to the dev stage and then runs the tests in `tests/live` against the real dev API. Before the tests start, `GET /version` is polled until it reports the PR's head commit, so the tests can't run against an older deployment.
 
-The tests need a long-lived token for a dev test user, stored as the `LIVE_TEST_TOKEN` secret in the GitHub `dev` environment. Generate it against the dev stage with a Google ID token:
+No stored token is needed. The runner signs a one-hour token for a dedicated `live-test-user` with the stage's `TOKEN_SIGNING_SECRET`, registers it in the stage's tokens table, runs the tests and then deletes it, whether the tests pass or fail.
 
-```bash
-curl -X POST https://<dev-api-id>.execute-api.us-west-2.amazonaws.com/dev/generateToken \
-  -H 'authorization: Bearer <google-id-token>'
-```
-
-To run them yourself against any stage:
+To run them yourself against any stage, either let the runner create a token (needs the stage's signing secret and AWS access):
 
 ```bash
 API_URL=https://<api-id>.execute-api.us-west-2.amazonaws.com/dev \
-LIVE_TEST_TOKEN=<token> \
-EXPECTED_COMMIT=<optional commit sha> \
+STAGE=dev \
+TOKEN_SIGNING_SECRET=<dev signing secret> \
+AWS_PROFILE=main AWS_REGION=us-west-2 \
 npm run test:live
 ```
+
+or pass in any token you already have with `LIVE_TEST_TOKEN=<token>`. Add `EXPECTED_COMMIT=<sha>` to wait for a particular deployment first.
 
 The tests create and delete their own documents and tokens, so they leave nothing behind.
 

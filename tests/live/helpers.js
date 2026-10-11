@@ -33,7 +33,7 @@ async function api(path, { method = 'GET', token = TOKEN, body, headers = {} } =
 function requireToken() {
   if (!TOKEN) {
     throw new Error(
-      'LIVE_TEST_TOKEN is not set. Generate one with POST /generateToken against this stage and store it as a secret.'
+      'LIVE_TEST_TOKEN is not set. Run the tests with `npm run test:live` so a token is created, or pass one in.'
     );
   }
   return TOKEN;
