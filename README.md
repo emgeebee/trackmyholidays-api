@@ -284,14 +284,13 @@ Example Result:
 
 Every PR deploys to the dev stage and then runs the tests in `tests/live` against the real dev API. Before the tests start, `GET /version` is polled until it reports the PR's head commit, so the tests can't run against an older deployment.
 
-No stored token is needed. The runner signs a one-hour token for a dedicated `live-test-user` with the stage's `TOKEN_SIGNING_SECRET`, registers it in the stage's tokens table, runs the tests and then deletes it, whether the tests pass or fail.
+No stored token is needed. The runner invokes the stage's deployed `generateToken` Lambda directly as a dedicated `live-test-user`, runs the tests, and then invokes `expireToken` to remove the token, whether the tests pass or fail. The AWS user running the tests needs `lambda:InvokeFunction` on `holidays-<stage>-generateToken` and `holidays-<stage>-expireToken`.
 
-To run them yourself against any stage, either let the runner create a token (needs the stage's signing secret and AWS access):
+To run them yourself against any stage, either let the runner create a token:
 
 ```bash
 API_URL=https://<api-id>.execute-api.us-west-2.amazonaws.com/dev \
 STAGE=dev \
-TOKEN_SIGNING_SECRET=<dev signing secret> \
 AWS_PROFILE=main AWS_REGION=us-west-2 \
 npm run test:live
 ```

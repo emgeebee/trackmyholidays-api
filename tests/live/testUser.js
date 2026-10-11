@@ -1,39 +1,52 @@
 'use strict';
 
-// Creates a short-lived token for a dedicated test user the same way
-// POST /generateToken does: signed with the stage's secret and registered in
-// the stage's tokens table. Needs TOKEN_SIGNING_SECRET, STAGE and AWS access.
-const jwt = require('jsonwebtoken');
+// Gets a token for a dedicated test user by invoking the deployed
+// generateToken / expireToken Lambdas directly with a pre-authorised event,
+// so the stage's own code and permissions create and remove it.
+// Needs STAGE and AWS credentials allowed to invoke those two functions.
+const { LambdaClient, InvokeCommand } = require('@aws-sdk/client-lambda');
 
-process.env.TOKENS_TABLE = process.env.TOKENS_TABLE || 'tokens';
-const tokenStore = require('../../holidays/tokenStore');
-const dynamoDb = require('../../holidays/dynamodb');
+const SERVICE = 'holidays';
+const TEST_USER = {
+  uid: process.env.LIVE_TEST_USER_SUB || 'live-test-user',
+  name: 'Live test user',
+};
 
-const TEST_USER_SUB = process.env.LIVE_TEST_USER_SUB || 'live-test-user';
+const lambda = new LambdaClient({});
 
-async function createTestToken() {
-  const secret = process.env.TOKEN_SIGNING_SECRET;
-  if (!secret || !process.env.STAGE) {
-    throw new Error('TOKEN_SIGNING_SECRET and STAGE are needed to create a live test token.');
+async function invoke(handler, body) {
+  if (!process.env.STAGE) {
+    throw new Error('STAGE is needed to create a live test token.');
   }
 
-  const token = jwt.sign(
-    { sub: TEST_USER_SUB, iss: 'holidays-api', name: 'Live test user' },
-    secret,
-    { expiresIn: '1h' }
+  const functionName = `${SERVICE}-${process.env.STAGE}-${handler}`;
+  const event = {
+    headers: {},
+    requestContext: { authorizer: TEST_USER },
+    body: body === undefined ? null : JSON.stringify(body),
+  };
+
+  const result = await lambda.send(
+    new InvokeCommand({
+      FunctionName: functionName,
+      Payload: Buffer.from(JSON.stringify(event)),
+    })
   );
-  const expiresAt = new Date(jwt.decode(token).exp * 1000).toISOString();
-  await tokenStore.saveToken(token, TEST_USER_SUB, expiresAt);
+
+  const payload = JSON.parse(Buffer.from(result.Payload).toString('utf8'));
+  if (result.FunctionError || payload.statusCode !== 200) {
+    throw new Error(`${functionName} failed: ${JSON.stringify(payload)}`);
+  }
+  return JSON.parse(payload.body);
+}
+
+async function createTestToken() {
+  const { token } = await invoke('generateToken');
   return token;
 }
 
 async function deleteTestToken(token) {
-  await dynamoDb
-    .delete({
-      TableName: `${process.env.TOKENS_TABLE}-${process.env.STAGE}`,
-      Key: { token },
-    })
-    .promise();
+  await invoke('expireToken', { token });
 }
 
 module.exports = { createTestToken, deleteTestToken };

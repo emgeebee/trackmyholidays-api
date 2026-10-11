@@ -60,7 +60,6 @@ jobs:
         if: env.STAGE == 'dev'
         env:
           EXPECTED_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
-          TOKEN_SIGNING_SECRET: ${{ secrets.TOKEN_SIGNING_SECRET }}
           AWS_PROFILE: main
           AWS_REGION: us-west-2
         run: npm run test:live
