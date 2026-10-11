@@ -11,6 +11,8 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: ${{ github.event_name == 'pull_request' && 'dev' || 'prod' }}
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v3
 
@@ -55,6 +57,16 @@ jobs:
           fi
           echo "API_URL=$API_URL" >> $GITHUB_ENV
           echo "API_URL=$API_URL" >> $GITHUB_OUTPUT
+
+      - name: Comment API URL on commit
+        if: env.STAGE == 'dev'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          gh api "repos/${{ github.repository }}/commits/$SHA/comments" \
+            -f body="Deployed to **dev**: $API_URL
+          Version check: $API_URL/version"
 
       - name: Live API tests
         if: env.STAGE == 'dev'
