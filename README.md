@@ -267,6 +267,38 @@ Example Result:
 {"permission":"read","doc":{"id":"summer-trip","title":"Summer holiday","data":{"destination":"Spain","days":10},"createdAt":"2026-10-08T18:00:00.000Z","updatedAt":"2026-10-08T18:00:00.000Z"}}
 ```
 
+### Version
+
+Public, no token needed. Reports the commit the stage is running.
+
+```bash
+curl https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/version
+```
+
+Example Result:
+```bash
+{"version":"2.0.0","commit":"9dcc018...","stage":"prod"}
+```
+
+## Live tests
+
+Every PR deploys to the dev stage and then runs the tests in `tests/live` against the real dev API. Before the tests start, `GET /version` is polled until it reports the PR's head commit, so the tests can't run against an older deployment.
+
+No stored token is needed. The runner invokes the stage's deployed `generateToken` Lambda directly as a dedicated `live-test-user`, runs the tests, and then invokes `expireToken` to remove the token, whether the tests pass or fail. The AWS user running the tests needs `lambda:InvokeFunction` on `holidays-<stage>-generateToken` and `holidays-<stage>-expireToken`.
+
+To run them yourself against any stage, either let the runner create a token:
+
+```bash
+API_URL=https://<api-id>.execute-api.us-west-2.amazonaws.com/dev \
+STAGE=dev \
+AWS_PROFILE=main AWS_REGION=us-west-2 \
+npm run test:live
+```
+
+or pass in any token you already have with `LIVE_TEST_TOKEN=<token>`. Add `EXPECTED_COMMIT=<sha>` to wait for a particular deployment first.
+
+The tests create and delete their own documents and tokens, so they leave nothing behind.
+
 ## Scaling
 
 ### AWS Lambda

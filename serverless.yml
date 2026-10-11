@@ -74,6 +74,7 @@ package:
     - '!scripts/**'
     - '!**/*.md'
     - '!**/*.map'
+    - '!tests/**'
 
 provider:
   name: aws
@@ -92,6 +93,7 @@ provider:
     SERVICE_NAME: holidays
     LOG_LOOKBACK: 7d
     L3_AGENT_MODEL: ${env:L3_AGENT_MODEL, 'amazon.nova-lite-v1:0'}
+    GIT_SHA: ${env:GIT_SHA, 'local'}
   iamRoleStatements:
     - Effect: Allow
       Action:
@@ -155,6 +157,14 @@ provider:
 functions:
   authFunc:
     handler: auth/auth.authorizer
+
+  version:
+    handler: holidays/version.version
+    events:
+      - http:
+          path: version
+          method: get
+          cors: ${self:custom.cors}
 
   create:
     handler: holidays/create.create
