@@ -65,6 +65,13 @@ package:
 provider:
   name: aws
   runtime: nodejs22.x
+  logs:
+    restApi:
+      # One JSON line per request in /aws/api-gateway/holidays-<stage>, used by l3Agent's traffic summary.
+      # status and latencyMs are left unquoted so Logs Insights treats them as numbers.
+      accessLogging: true
+      executionLogging: false
+      format: '{"requestId":"$context.requestId","time":"$context.requestTime","method":"$context.httpMethod","resource":"$context.resourcePath","status":$context.status,"uid":"$context.authorizer.uid","latencyMs":$context.responseLatency}'
   environment:
     DYNAMODB_TABLE: "holidays"
     STAGE: ${self:custom.myStage}
