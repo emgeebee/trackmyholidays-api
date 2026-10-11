@@ -32,6 +32,10 @@ The user id is always taken from the token, never from the URL or body, so users
 
 API responses only include CORS headers for the origins listed in [`config/allowedOrigins.json`](config/allowedOrigins.json).
 
+## Rate limits
+
+API Gateway throttles each stage to 10 requests per second, with bursts of up to 20. `POST /generateToken` is limited further, to one request every 2 seconds with bursts of 2. Requests over the limit get `429 Too Many Requests` without reaching any Lambda. The limits are shared by all callers, not per user or IP, and are set under `custom.apiGatewayThrottling` in `serverless.yml`.
+
 ## Endpoints
 
 | Method | Path | Description |

@@ -5,6 +5,7 @@ frameworkVersion: "3"
 plugins:
   - serverless-dynamodb-local
   - serverless-offline
+  - serverless-api-gateway-throttling
 
 
 custom:
@@ -20,6 +21,10 @@ custom:
     stages:
       - dev
       - prod
+  # Stage-wide limits; requests over them get 429 before any Lambda runs.
+  apiGatewayThrottling:
+    maxRequestsPerSecond: 10
+    maxConcurrentRequests: 20
   cors:
     origins: ${file(./config/allowedOrigins.json)}
     headers:
@@ -184,6 +189,9 @@ functions:
       - http:
           path: generateToken
           method: post
+          throttling:
+            maxRequestsPerSecond: 0.5
+            maxConcurrentRequests: 2
           cors: ${self:custom.cors}
           authorizer:
             name: authFunc
