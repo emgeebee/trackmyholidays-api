@@ -17,7 +17,7 @@ async function main() {
   try {
     const result = spawnSync(
       process.execPath,
-      ['--test', '--test-concurrency=1', 'tests/live/**/*.test.js'],
+      ['--test', '--test-concurrency=1', '--test-reporter=spec', 'tests/live/**/*.test.js'],
       {
         stdio: 'inherit',
         env: { ...process.env, LIVE_TEST_TOKEN: process.env.LIVE_TEST_TOKEN || createdToken },
