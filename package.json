@@ -22,7 +22,6 @@
   "devDependencies": {
     "@aws-sdk/client-lambda": "^3.1149.0",
     "serverless": "^3.40.0",
-    "serverless-apigateway-service-proxy": "^2.2.2",
     "serverless-dynamodb-local": "^0.2.40",
     "serverless-offline": "^13.10.1"
   }
