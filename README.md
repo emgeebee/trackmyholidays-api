@@ -23,7 +23,7 @@ TOKEN=<google-id-token-or-long-lived-token>
 
 ## Authentication
 
-Every endpoint except `GET /version` and the static files needs an `Authorization: Bearer <token>` header. The token can be:
+Every endpoint except `GET /version` needs an `Authorization: Bearer <token>` header. The token can be:
 
 - a **Google ID token** issued for one of the configured client ids (Track My Holidays or famtree), or
 - a **long-lived token** from `POST /generateToken`, which authenticates as the same Google user.
@@ -52,8 +52,6 @@ API responses only include CORS headers for the origins listed in [`config/allow
 | `GET` | `/docs/{id}/shares` | List my document's share links and who opened them |
 | `DELETE` | `/docs/{id}/shares/{code}` | Revoke a share link |
 | `GET` | `/shared/{code}` | Open a document someone shared with me (read-only) |
-| `GET` | `/`, `/{asset}` | Static files from the stage's static files bucket. No token needed. |
-
 ### Version
 
 ```bash

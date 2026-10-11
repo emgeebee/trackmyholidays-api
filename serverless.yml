@@ -5,7 +5,6 @@ frameworkVersion: "3"
 plugins:
   - serverless-dynamodb-local
   - serverless-offline
-  - serverless-apigateway-service-proxy
 
 
 custom:
@@ -35,24 +34,6 @@ custom:
       name: authFunc
       type: request
       identitySource: method.request.header.Authorization
-  apiGatewayServiceProxies:
-    - s3:
-        path: /
-        method: get
-        action: GetObject
-        bucket:
-          Ref: holidaysStaticFilesBucket
-        key: 'index.html'
-        cors: true
-    - s3:
-        path: /{asset}
-        method: get
-        action: GetObject
-        bucket:
-          Ref: holidaysStaticFilesBucket
-        key:
-          pathParam: asset
-        cors: true
 
 package:
   patterns:
@@ -341,9 +322,6 @@ functions:
 
 resources:
   Resources:
-    holidaysStaticFilesBucket:
-      Type: AWS::S3::Bucket
-
     docStoreBucket:
       Type: AWS::S3::Bucket
 
