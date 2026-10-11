@@ -41,12 +41,25 @@ jobs:
           GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
           FAMTREE_GOOGLE_CLIENT_ID: ${{ vars.FAMTREE_GOOGLE_CLIENT_ID }}
           TOKEN_SIGNING_SECRET: ${{ secrets.TOKEN_SIGNING_SECRET }}
+          GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: npx serverless deploy --stage ${{ env.STAGE }} --aws-profile main -r us-west-2
 
       - name: Get API URL
         id: api
         run: |
-          API_URL=$(npx serverless info --stage ${{ env.STAGE }} --aws-profile main -r us-west-2 | grep "endpoint:" | cut -d' ' -f2)
+          API_URL=$(aws cloudformation describe-stacks --stack-name holidays-${{ env.STAGE }} --profile main --region us-west-2 \
+            --query "Stacks[0].Outputs[?OutputKey=='ServiceEndpoint'].OutputValue" --output text)
+          if [ -z "$API_URL" ] || [ "$API_URL" = "None" ]; then
+            echo "Could not find ServiceEndpoint output for holidays-${{ env.STAGE }}" >&2
+            exit 1
+          fi
           echo "API_URL=$API_URL" >> $GITHUB_ENV
           echo "API_URL=$API_URL" >> $GITHUB_OUTPUT
+
+      - name: Live API tests
+        if: env.STAGE == 'dev'
+        env:
+          EXPECTED_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+          LIVE_TEST_TOKEN: ${{ secrets.LIVE_TEST_TOKEN }}
+        run: npm run test:live
 

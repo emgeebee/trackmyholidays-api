@@ -267,6 +267,41 @@ Example Result:
 {"permission":"read","doc":{"id":"summer-trip","title":"Summer holiday","data":{"destination":"Spain","days":10},"createdAt":"2026-10-08T18:00:00.000Z","updatedAt":"2026-10-08T18:00:00.000Z"}}
 ```
 
+### Version
+
+Public, no token needed. Reports the commit the stage is running.
+
+```bash
+curl https://1q1v3hm1n2.execute-api.us-west-2.amazonaws.com/prod/version
+```
+
+Example Result:
+```bash
+{"version":"2.0.0","commit":"9dcc018...","stage":"prod"}
+```
+
+## Live tests
+
+Every PR deploys to the dev stage and then runs the tests in `tests/live` against the real dev API. Before the tests start, `GET /version` is polled until it reports the PR's head commit, so the tests can't run against an older deployment.
+
+The tests need a long-lived token for a dev test user, stored as the `LIVE_TEST_TOKEN` secret in the GitHub `dev` environment. Generate it against the dev stage with a Google ID token:
+
+```bash
+curl -X POST https://<dev-api-id>.execute-api.us-west-2.amazonaws.com/dev/generateToken \
+  -H 'authorization: Bearer <google-id-token>'
+```
+
+To run them yourself against any stage:
+
+```bash
+API_URL=https://<api-id>.execute-api.us-west-2.amazonaws.com/dev \
+LIVE_TEST_TOKEN=<token> \
+EXPECTED_COMMIT=<optional commit sha> \
+npm run test:live
+```
+
+The tests create and delete their own documents and tokens, so they leave nothing behind.
+
 ## Scaling
 
 ### AWS Lambda
