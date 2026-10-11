@@ -183,6 +183,8 @@ Opening a shared document:
 
 `l3Agent` runs every 7 days. It uses a [Strands](https://strandsagents.com) agent on Amazon Bedrock (default model `amazon.nova-lite-v1:0`, set by `L3_AGENT_MODEL`) to query the service's CloudWatch logs for the last 7 days. It saves a markdown report of errors and anything unusual to the document bucket under `reports/`.
 
+The report opens with a traffic summary, so errors can be put in proportion (e.g. "server errors affected 1 of 100 users, 1%"). The figures come from API Gateway access logs in `/aws/api-gateway/holidays-<stage>`, which record one JSON line per request: method, endpoint, status, latency and the signed-in user's id. The agent's `traffic_summary` tool calculates totals, distinct users, status codes, per-endpoint usage, and how many users each error affected. The numbers are computed in code, not estimated by the model.
+
 ## Development
 
 ```bash

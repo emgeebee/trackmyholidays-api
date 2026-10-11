@@ -65,6 +65,15 @@ package:
 provider:
   name: aws
   runtime: nodejs22.x
+  logs:
+    restApi:
+      # One JSON line per request in /aws/api-gateway/holidays-<stage>, used by l3Agent's traffic summary.
+      # status and latencyMs are left unquoted so Logs Insights treats them as numbers.
+      accessLogging: true
+      executionLogging: false
+      # Serverless v3 cannot create its default serverlessApiGatewayCloudWatchRole (SDK v3 error-code bug), so supply one.
+      role: !GetAtt apiGatewayCloudWatchRole.Arn
+      format: '{"requestId":"$context.requestId","time":"$context.requestTime","method":"$context.httpMethod","resource":"$context.resourcePath","status":$context.status,"uid":"$context.authorizer.uid","latencyMs":$context.responseLatency}'
   environment:
     DYNAMODB_TABLE: "holidays"
     STAGE: ${self:custom.myStage}
@@ -330,6 +339,18 @@ functions:
 
 resources:
   Resources:
+    apiGatewayCloudWatchRole:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: apigateway.amazonaws.com
+              Action: sts:AssumeRole
+        ManagedPolicyArns:
+          - arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs
     docStoreBucket:
       Type: AWS::S3::Bucket
 

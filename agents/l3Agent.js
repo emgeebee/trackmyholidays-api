@@ -14,6 +14,7 @@ const s3 = new S3Client({});
 const SERVICE_NAME = process.env.SERVICE_NAME || 'holidays';
 const STAGE = process.env.STAGE || 'dev';
 const LOG_GROUP_PREFIX = `/aws/lambda/${SERVICE_NAME}-${STAGE}-`;
+const ACCESS_LOG_GROUP = `/aws/api-gateway/${SERVICE_NAME}-${STAGE}`;
 const LOG_LOOKBACK = process.env.LOG_LOOKBACK || '7d';
 const REPORTS_PREFIX = 'reports';
 const DOCS_BUCKET = process.env.DOCS_BUCKET;
@@ -51,6 +52,90 @@ async function waitForQueryResults(queryId, maxAttempts = 30) {
   }
 
   throw new Error('CloudWatch Logs query timed out');
+}
+
+async function runInsightsQuery(logGroupName, queryString, startTime, endTime) {
+  const { queryId } = await cloudwatchLogs.send(
+    new StartQueryCommand({
+      logGroupName,
+      startTime: Math.floor(startTime / 1000),
+      endTime: Math.floor(endTime / 1000),
+      queryString,
+    })
+  );
+  return waitForQueryResults(queryId);
+}
+
+function rowsToObjects(results) {
+  return results.map((row) =>
+    Object.fromEntries(
+      row.filter((field) => field.field !== '@ptr').map((field) => [field.field, field.value])
+    )
+  );
+}
+
+function percent(part, whole) {
+  if (!whole) {
+    return '0%';
+  }
+  const value = (part / whole) * 100;
+  return `${value < 1 && value > 0 ? value.toFixed(2) : value.toFixed(1)}%`;
+}
+
+// Requests from authenticated users have a uid; authorizer rejections log "-".
+const AUTHED = 'filter ispresent(uid) and uid != "-"';
+
+async function summariseTraffic(startTime, endTime) {
+  const query = async (queryString) =>
+    rowsToObjects(await runInsightsQuery(ACCESS_LOG_GROUP, queryString, startTime, endTime));
+
+  const [[totals = {}], byStatus, [authed = {}], [serverErrors = {}], [clientErrors = {}], byEndpoint, errorsByEndpoint] =
+    await Promise.all([
+      query('stats count(*) as requests'),
+      query('stats count(*) as requests by status | sort status asc'),
+      query(`${AUTHED} | stats count(*) as requests, count_distinct(uid) as users`),
+      query(`${AUTHED} | filter status >= 500 | stats count(*) as requests, count_distinct(uid) as users`),
+      query(`${AUTHED} | filter status >= 400 and status < 500 | stats count(*) as requests, count_distinct(uid) as users`),
+      query(`${AUTHED} | stats count(*) as requests, count_distinct(uid) as users by method, resource | sort requests desc`),
+      query(`${AUTHED} | filter status >= 400 | stats count(*) as requests, count_distinct(uid) as users by method, resource, status | sort requests desc`),
+    ]);
+
+  const totalRequests = Number(totals.requests || 0);
+  const totalUsers = Number(authed.users || 0);
+  const authedRequests = Number(authed.requests || 0);
+  const unauthorised = byStatus
+    .filter((row) => row.status === '401' || row.status === '403')
+    .reduce((sum, row) => sum + Number(row.requests), 0);
+
+  const lines = [
+    `Traffic for ${SERVICE_NAME}-${STAGE}, ${new Date(startTime).toISOString()} to ${new Date(endTime).toISOString()}`,
+    `(from API Gateway access logs; user counts are distinct authenticated user ids and may be approximate at very high volumes)`,
+    '',
+    `- Total requests: ${totalRequests}`,
+    `- Authenticated requests: ${authedRequests}`,
+    `- Distinct users: ${totalUsers}`,
+    `- Rejected as unauthorised (401/403): ${unauthorised} (${percent(unauthorised, totalRequests)} of requests)`,
+    `- Server errors (5xx) for signed-in users: ${serverErrors.requests || 0} requests (${percent(Number(serverErrors.requests || 0), authedRequests)}), affecting ${serverErrors.users || 0} users (${percent(Number(serverErrors.users || 0), totalUsers)} of users)`,
+    `- Client errors (4xx) for signed-in users: ${clientErrors.requests || 0} requests (${percent(Number(clientErrors.requests || 0), authedRequests)}), affecting ${clientErrors.users || 0} users (${percent(Number(clientErrors.users || 0), totalUsers)} of users)`,
+    '',
+    'Requests by status:',
+    ...byStatus.map((row) => `- ${row.status}: ${row.requests} (${percent(Number(row.requests), totalRequests)})`),
+    '',
+    'Signed-in traffic by endpoint:',
+    ...byEndpoint.map(
+      (row) => `- ${row.method} ${row.resource}: ${row.requests} requests from ${row.users} users (${percent(Number(row.users), totalUsers)} of users)`
+    ),
+    '',
+    'Error responses to signed-in users by endpoint:',
+    ...(errorsByEndpoint.length
+      ? errorsByEndpoint.map(
+          (row) =>
+            `- ${row.method} ${row.resource} ${row.status}: ${row.requests} requests, ${row.users} users (${percent(Number(row.users), totalUsers)} of all users)`
+        )
+      : ['- none']),
+  ];
+
+  return lines.join('\n');
 }
 
 function formatQueryResults(results) {
@@ -127,17 +212,36 @@ function buildTools(tool, z) {
       const startTime = parseLookback(time);
       const rowLimit = limit || 100;
 
-      const { queryId } = await cloudwatchLogs.send(
-        new StartQueryCommand({
-          logGroupName,
-          startTime: Math.floor(startTime / 1000),
-          endTime: Math.floor(endTime / 1000),
-          queryString: `${query}\n| limit ${rowLimit}`,
-        })
+      const results = await runInsightsQuery(
+        logGroupName,
+        `${query}\n| limit ${rowLimit}`,
+        startTime,
+        endTime
       );
-
-      const results = await waitForQueryResults(queryId);
       return formatQueryResults(results);
+    },
+  });
+
+  const trafficSummary = tool({
+    name: 'traffic_summary',
+    description:
+      'Summarise API traffic from API Gateway access logs: total requests, distinct users, ' +
+      'status codes, per-endpoint usage, and how many users each error affected (with percentages).',
+    inputSchema: z.object({
+      time: z
+        .string()
+        .optional()
+        .describe(`Lookback window such as "1d" or "7d". Defaults to ${LOG_LOOKBACK}.`),
+    }),
+    callback: async ({ time }) => {
+      try {
+        return await summariseTraffic(parseLookback(time), Date.now());
+      } catch (err) {
+        if (err.name === 'ResourceNotFoundException') {
+          return `No access logs found in ${ACCESS_LOG_GROUP}; traffic cannot be summarised yet.`;
+        }
+        throw err;
+      }
     },
   });
 
@@ -171,7 +275,7 @@ function buildTools(tool, z) {
     },
   });
 
-  return [listServiceLogGroups, logAnalyser, saveReport];
+  return [listServiceLogGroups, logAnalyser, trafficSummary, saveReport];
 }
 
 function buildAnalysisPrompt() {
@@ -180,20 +284,22 @@ function buildAnalysisPrompt() {
   return `Review Lambda logs for the ${SERVICE_NAME} service in the ${STAGE} stage over the last ${LOG_LOOKBACK}.
 
 Your job:
-1. Call list_service_log_groups to find all relevant log groups.
-2. For each log group, run log_analyser queries to investigate:
+1. Call traffic_summary once to get this week's traffic: total requests, distinct users, status codes, per-endpoint usage and how many users each error affected. Use these numbers as given; do not recalculate or estimate them.
+2. Call list_service_log_groups to find all relevant log groups.
+3. For each log group, run log_analyser queries to investigate:
    - errors and exceptions (ERROR, Exception, Task timed out, Runtime exited)
    - authorization failures (Unauthorized, Denied, 401, 403)
    - repeated warnings that may indicate a problem
    - any unusual spikes or new error patterns
-3. Compile a markdown report with these sections:
-   - Executive summary
-   - Findings by severity (critical, warning, info)
+4. Compile a markdown report with these sections:
+   - Executive summary, opening with the traffic headline (e.g. "1,240 requests from 100 users; server errors affected 1 user (1%)")
+   - Traffic summary: the traffic_summary figures, including per-endpoint usage
+   - Findings by severity (critical, warning, info). Quantify each finding's impact using the traffic numbers: how many requests and users it affected and what share of the total that is. Say so when a finding can't be tied to users.
    - Findings by Lambda function
-   - Recommended follow-up actions
+   - Recommended follow-up actions, ordered by how many users are affected
    - Appendix with representative log excerpts
-4. Save the report with save_report using title "log-report-${reportDate}".
-5. Return a short summary of the most important findings.
+5. Save the report with save_report using title "log-report-${reportDate}".
+6. Return a short summary of the most important findings, including the traffic headline.
 
 Suggested Insights queries to adapt per log group:
 - fields @timestamp, @message | filter @message like /(?i)(error|exception|timed out|unauthorized|denied|failed)/
