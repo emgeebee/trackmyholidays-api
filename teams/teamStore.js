@@ -25,11 +25,15 @@ async function createTeam(id, name, parentId, createdBy) {
   const team = {
     id,
     name,
-    parentId: parentId || null,
     createdBy,
     createdAt: now,
     updatedAt: now,
   };
+
+  // Only include parentId if it's not null (DynamoDB GSI doesn't allow null values)
+  if (parentId) {
+    team.parentId = parentId;
+  }
 
   await client.send(new PutCommand({
     TableName: tableName,
@@ -37,7 +41,11 @@ async function createTeam(id, name, parentId, createdBy) {
     ConditionExpression: 'attribute_not_exists(id)',
   }));
 
-  return team;
+  // Always return with parentId for consistency (null for root teams)
+  return {
+    ...team,
+    parentId: parentId || null,
+  };
 }
 
 async function getTeam(id) {
