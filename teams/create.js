@@ -80,6 +80,12 @@ module.exports.create = async (event) => {
     };
   } catch (error) {
     console.error('Error creating team:', error);
+    console.error('Error details:', {
+      name: error.name,
+      message: error.message,
+      code: error.code,
+      stack: error.stack
+    });
     
     if (error.name === 'ConditionalCheckFailedException') {
       return {
@@ -92,7 +98,11 @@ module.exports.create = async (event) => {
     return {
       statusCode: 500,
       headers: corsHeaders(event),
-      body: JSON.stringify({ error: 'Failed to create team' }),
+      body: JSON.stringify({ 
+        error: 'Failed to create team',
+        message: error.message,
+        code: error.code || error.name
+      }),
     };
   }
 };
