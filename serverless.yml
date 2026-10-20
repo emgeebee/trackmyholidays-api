@@ -89,6 +89,9 @@ provider:
     LOG_LOOKBACK: 7d
     L3_AGENT_MODEL: ${env:L3_AGENT_MODEL, 'amazon.nova-lite-v1:0'}
     GIT_SHA: ${env:GIT_SHA, 'local'}
+    TEAMS_TABLE: teams
+    TEAM_MEMBERS_TABLE: teamMembers
+    TEAM_INVITES_TABLE: teamInvites
   iamRoleStatements:
     - Effect: Allow
       Action:
@@ -104,6 +107,12 @@ provider:
         - "arn:aws:dynamodb:${opt:region, self:provider.region}:*:table/${self:provider.environment.TOKENS_TABLE}-${self:custom.myStage}/index/*"
         - "arn:aws:dynamodb:${opt:region, self:provider.region}:*:table/${self:provider.environment.DOC_SHARES_TABLE}-${self:custom.myStage}"
         - "arn:aws:dynamodb:${opt:region, self:provider.region}:*:table/${self:provider.environment.DOC_SHARES_TABLE}-${self:custom.myStage}/index/*"
+        - "arn:aws:dynamodb:${opt:region, self:provider.region}:*:table/${self:provider.environment.TEAMS_TABLE}-${self:custom.myStage}"
+        - "arn:aws:dynamodb:${opt:region, self:provider.region}:*:table/${self:provider.environment.TEAMS_TABLE}-${self:custom.myStage}/index/*"
+        - "arn:aws:dynamodb:${opt:region, self:provider.region}:*:table/${self:provider.environment.TEAM_MEMBERS_TABLE}-${self:custom.myStage}"
+        - "arn:aws:dynamodb:${opt:region, self:provider.region}:*:table/${self:provider.environment.TEAM_MEMBERS_TABLE}-${self:custom.myStage}/index/*"
+        - "arn:aws:dynamodb:${opt:region, self:provider.region}:*:table/${self:provider.environment.TEAM_INVITES_TABLE}-${self:custom.myStage}"
+        - "arn:aws:dynamodb:${opt:region, self:provider.region}:*:table/${self:provider.environment.TEAM_INVITES_TABLE}-${self:custom.myStage}/index/*"
     - Effect: Allow
       Action:
         - apigateway:GET
@@ -327,6 +336,96 @@ functions:
             name: authFunc
             identitySource: method.request.header.Authorization
 
+  teamsList:
+    handler: teams/list.list
+    events:
+      - http:
+          path: api/teams
+          method: get
+          cors: ${self:custom.cors}
+          authorizer: ${self:custom.authorizers.auth}
+
+  teamsCreate:
+    handler: teams/create.create
+    events:
+      - http:
+          path: api/teams
+          method: post
+          cors: ${self:custom.cors}
+          authorizer: ${self:custom.authorizers.auth}
+
+  teamsUpdate:
+    handler: teams/update.update
+    events:
+      - http:
+          path: api/teams/{id}
+          method: patch
+          cors: ${self:custom.cors}
+          authorizer: ${self:custom.authorizers.auth}
+
+  teamsDelete:
+    handler: teams/delete.delete
+    events:
+      - http:
+          path: api/teams/{id}
+          method: delete
+          cors: ${self:custom.cors}
+          authorizer: ${self:custom.authorizers.auth}
+
+  teamsGetMembers:
+    handler: teams/getMembers.getMembers
+    events:
+      - http:
+          path: api/teams/{id}/members
+          method: get
+          cors: ${self:custom.cors}
+          authorizer: ${self:custom.authorizers.auth}
+
+  teamsRemoveMember:
+    handler: teams/removeMember.removeMember
+    events:
+      - http:
+          path: api/teams/{id}/members/{memberId}
+          method: delete
+          cors: ${self:custom.cors}
+          authorizer: ${self:custom.authorizers.auth}
+
+  teamsInvite:
+    handler: teams/invite.invite
+    events:
+      - http:
+          path: api/teams/invite
+          method: post
+          cors: ${self:custom.cors}
+          authorizer: ${self:custom.authorizers.auth}
+
+  teamsAcceptInvite:
+    handler: teams/acceptInvite.acceptInvite
+    events:
+      - http:
+          path: api/teams/invites/{inviteId}/accept
+          method: post
+          cors: ${self:custom.cors}
+          authorizer: ${self:custom.authorizers.auth}
+
+  teamsGetPendingInvites:
+    handler: teams/getPendingInvites.getPendingInvites
+    events:
+      - http:
+          path: api/teams/invites/pending
+          method: get
+          cors: ${self:custom.cors}
+          authorizer: ${self:custom.authorizers.auth}
+
+  teamsGetHolidays:
+    handler: teams/getHolidays.getHolidays
+    events:
+      - http:
+          path: api/teams/holidays
+          method: get
+          cors: ${self:custom.cors}
+          authorizer: ${self:custom.authorizers.auth}
+
   l3Agent:
     handler: agents/l3Agent.l3Agent
     timeout: 300
@@ -427,6 +526,101 @@ resources:
     #       ReadCapacityUnits: 1
     #       WriteCapacityUnits: 1
     #     TableName: ${self:provider.environment.DYNAMODB_TABLE}-${self:custom.myStage}
+
+    teamsTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: Retain
+      UpdateReplacePolicy: Retain
+      Properties:
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: parentId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: parentId-index
+            KeySchema:
+              - AttributeName: parentId
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+            ProvisionedThroughput:
+              ReadCapacityUnits: 1
+              WriteCapacityUnits: 1
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        TableName: ${self:provider.environment.TEAMS_TABLE}-${self:custom.myStage}
+
+    teamMembersTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: Retain
+      UpdateReplacePolicy: Retain
+      Properties:
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: userId
+            AttributeType: S
+          - AttributeName: teamId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: userId-index
+            KeySchema:
+              - AttributeName: userId
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+            ProvisionedThroughput:
+              ReadCapacityUnits: 1
+              WriteCapacityUnits: 1
+          - IndexName: teamId-index
+            KeySchema:
+              - AttributeName: teamId
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+            ProvisionedThroughput:
+              ReadCapacityUnits: 1
+              WriteCapacityUnits: 1
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        TableName: ${self:provider.environment.TEAM_MEMBERS_TABLE}-${self:custom.myStage}
+
+    teamInvitesTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: Retain
+      UpdateReplacePolicy: Retain
+      Properties:
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: email
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: email-index
+            KeySchema:
+              - AttributeName: email
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+            ProvisionedThroughput:
+              ReadCapacityUnits: 1
+              WriteCapacityUnits: 1
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        TableName: ${self:provider.environment.TEAM_INVITES_TABLE}-${self:custom.myStage}
         
     AuthFailureGatewayResponse:
       Type: 'AWS::ApiGateway::GatewayResponse'
