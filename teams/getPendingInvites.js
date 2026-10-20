@@ -16,16 +16,12 @@ module.exports.getPendingInvites = async (event) => {
     };
   }
 
-  if (!identity.email) {
-    return {
-      statusCode: 400,
-      headers: corsHeaders(event),
-      body: JSON.stringify({ error: 'Email not available from token' }),
-    };
-  }
-
   try {
-    const invites = await inviteStore.getInvitesByEmail(identity.email);
+    let invites = [];
+    
+    if (identity.email) {
+      invites = await inviteStore.getInvitesByEmail(identity.email);
+    }
     
     const now = new Date();
     const pendingInvites = invites.filter(invite => {
