@@ -46,6 +46,12 @@ jobs:
           GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: npx serverless deploy --stage ${{ env.STAGE }} --aws-profile main -r us-west-2
 
+      - name: Create DynamoDB Tables
+        if: env.STAGE == 'dev'
+        run: |
+          echo "Ensuring teams DynamoDB tables exist..."
+          bash scripts/create-tables.sh ${{ env.STAGE }} us-west-2 main || echo "Tables already exist or created"
+
       - name: Get API URL
         id: api
         run: |
