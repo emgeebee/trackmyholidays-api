@@ -325,12 +325,34 @@ functions:
             name: authFunc
             identitySource: method.request.header.Authorization
 
+  docsShareAccess:
+    handler: holidays/docs/shares.setAccess
+    events:
+      - http:
+          path: docs/{id}/shares/{code}/access/{userid}
+          method: put
+          cors: ${self:custom.cors}
+          authorizer:
+            name: authFunc
+            identitySource: method.request.header.Authorization
+
   docsSharedGet:
     handler: holidays/docs/shares.getShared
     events:
       - http:
           path: shared/{code}
           method: get
+          cors: ${self:custom.cors}
+          authorizer:
+            name: authFunc
+            identitySource: method.request.header.Authorization
+
+  docsSharedUpdate:
+    handler: holidays/docs/shares.updateShared
+    events:
+      - http:
+          path: shared/{code}
+          method: put
           cors: ${self:custom.cors}
           authorizer:
             name: authFunc
