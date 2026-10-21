@@ -13,6 +13,32 @@ function validateShareCode(code) {
   return typeof code === 'string' && /^[A-Za-z0-9_-]{16,64}$/.test(code);
 }
 
+function validateUserId(userid) {
+  return typeof userid === 'string' && /^[A-Za-z0-9._-]{1,128}$/.test(userid);
+}
+
+function writerIds(share) {
+  const writers = share && share.writers;
+  if (!writers) {
+    return [];
+  }
+  if (Array.isArray(writers)) {
+    return writers;
+  }
+  if (typeof writers[Symbol.iterator] === 'function') {
+    return [...writers];
+  }
+  return [];
+}
+
+// The share link itself stays read. Write is granted per person in writers.
+function accessPermission(share, userid) {
+  if (userid && share && userid === share.ownerId) {
+    return 'write';
+  }
+  return writerIds(share).includes(userid) ? 'write' : 'read';
+}
+
 async function createShare(ownerId, docId) {
   const share = {
     code: crypto.randomBytes(18).toString('base64url'),
@@ -81,6 +107,26 @@ async function recordAccess(share, identity) {
     .promise();
 }
 
+async function setAccessPermission(share, userid, permission) {
+  const writers = writerIds(share).filter((id) => id !== userid);
+  if (permission === 'write') {
+    writers.push(userid);
+  }
+
+  await dynamoDb
+    .update({
+      TableName: TABLE_NAME,
+      Key: { code: share.code },
+      UpdateExpression: 'SET writers = :writers',
+      // Stops a revoked share being recreated by a late permission write.
+      ConditionExpression: 'attribute_exists(docKey)',
+      ExpressionAttributeValues: { ':writers': writers },
+    })
+    .promise();
+
+  return { ...share, writers };
+}
+
 async function deleteShare(code) {
   await dynamoDb.delete({ TableName: TABLE_NAME, Key: { code } }).promise();
 }
@@ -92,10 +138,13 @@ async function deleteSharesForDoc(ownerId, docId) {
 
 module.exports = {
   validateShareCode,
+  validateUserId,
+  accessPermission,
   createShare,
   getShare,
   listSharesForDoc,
   recordAccess,
+  setAccessPermission,
   deleteShare,
   deleteSharesForDoc,
 };

@@ -4,7 +4,7 @@ Serverless backend for [Track My Holidays](https://trackmyholidays.com) and [fam
 
 - a per-user holidays record (DynamoDB)
 - long-lived API tokens, as an alternative to Google ID tokens
-- generic JSON document storage (S3), with read-only share links
+- generic JSON document storage (S3), with share links and per-person write access
 - a weekly agent that scans the service's CloudWatch logs and writes an error report
 
 ## Base URLs
@@ -55,7 +55,9 @@ API Gateway throttles each stage to 10 requests per second, with bursts of up to
 | `POST` | `/docs/{id}/shares` | Create a share link for my document |
 | `GET` | `/docs/{id}/shares` | List my document's share links and who opened them |
 | `DELETE` | `/docs/{id}/shares/{code}` | Revoke a share link |
-| `GET` | `/shared/{code}` | Open a document someone shared with me (read-only) |
+| `PUT` | `/docs/{id}/shares/{code}/access/{userid}` | Set read or write for someone who has opened this link |
+| `GET` | `/shared/{code}` | Open a document someone shared with me |
+| `PUT` | `/shared/{code}` | Replace a shared document when I have been given write |
 ### Version
 
 ```bash
@@ -63,7 +65,7 @@ curl $API/version
 ```
 
 ```json
-{"version":"2.0.0","commit":"1a27cc8…","stage":"prod"}
+{"version":"2.1.0","commit":"1a27cc8…","stage":"prod"}
 ```
 
 ### Holidays
@@ -152,7 +154,7 @@ A document as returned by create, get and update; list wraps them as `{"docs":[�
 
 ### Sharing documents
 
-The owner creates a share code for a document. Anyone signed in who has the code can read the document, but not change it. Only the owner can list or revoke codes, and see who has opened each one. Opening your own link isn't recorded.
+The owner creates a share code for a document. The link itself stays `read`: anyone signed in who has the code can open the document, and opening it records them on that share. The owner can then set `write` for one of those people without changing anyone else. That person can replace the document; it stays under the owner's account. Everyone else gets `403` on update. Setting `read` again removes their write access. Only the owner can list links, change a person's access, or revoke a code. Opening or saving through your own link isn't recorded. The owner always has write.
 
 ```bash
 # Owner: create, list and revoke share links
@@ -160,18 +162,28 @@ curl -X POST $API/docs/summer-trip/shares -H "Authorization: Bearer $TOKEN"
 curl $API/docs/summer-trip/shares -H "Authorization: Bearer $TOKEN"
 curl -X DELETE $API/docs/summer-trip/shares/<code> -H "Authorization: Bearer $TOKEN"
 
-# Anyone signed in with the code
+# Owner: give one person who has already opened the link write access
+curl -X PUT $API/docs/summer-trip/shares/<code>/access/<userid> \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"permission":"write"}'
+
+# Anyone signed in with the code. PUT succeeds only for people granted write.
 curl $API/shared/<code> -H "Authorization: Bearer $THEIR_TOKEN"
+curl -X PUT $API/shared/<code> \
+  -H "Authorization: Bearer $THEIR_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Summer holiday","data":{"destination":"Spain","days":12}}'
 ```
 
 Listing share links:
 
 ```json
 [{"code":"q3Zr8kP1xW9vYbT2nLm4sA0d","docId":"summer-trip","permission":"read","createdAt":"2026-10-08T18:00:00.000Z",
-  "accessedBy":[{"userid":"117283546120394857261","email":"friend@example.com","name":"A Friend","firstAccessedAt":"2026-10-08T19:00:00.000Z","lastAccessedAt":"2026-10-09T08:30:00.000Z","accessCount":3}]}]
+  "accessedBy":[{"userid":"117283546120394857261","email":"friend@example.com","name":"A Friend","permission":"write","firstAccessedAt":"2026-10-08T19:00:00.000Z","lastAccessedAt":"2026-10-09T08:30:00.000Z","accessCount":3}]}]
 ```
 
-Opening a shared document:
+Opening or saving a shared document. `permission` here is the signed-in person's access, `read` until the owner grants them `write`:
 
 ```json
 {"permission":"read","doc":{"id":"summer-trip","title":"Summer holiday","data":{"destination":"Spain","days":10},"createdAt":"2026-10-08T18:00:00.000Z","updatedAt":"2026-10-08T18:00:00.000Z"}}
