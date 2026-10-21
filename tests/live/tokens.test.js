@@ -16,12 +16,13 @@ describe('long-lived tokens', () => {
     }
   });
 
-  it('POST /generateToken returns a new token', async () => {
-    const res = await api('/generateToken', { method: 'POST' });
+  it('POST /generateToken returns a new token with its name', async () => {
+    const res = await api('/generateToken', { method: 'POST', body: { name: '  live test  ' } });
     assert.equal(res.status, 200, res.text);
     assert.ok(res.json.token, 'response has a token');
     assert.ok(res.json.sub, 'response has a sub');
     assert.ok(res.json.expiresAt, 'response has an expiresAt');
+    assert.equal(res.json.name, 'live test');
     generated = res.json;
   });
 
@@ -35,7 +36,37 @@ describe('long-lived tokens', () => {
     if (!generated) return t.skip('no token was generated');
     const res = await api('/tokens');
     assert.equal(res.status, 200, res.text);
-    assert.ok(res.json.tokens.some((item) => item.token === generated.token));
+    const listed = res.json.tokens.find((item) => item.token === generated.token);
+    assert.ok(listed, 'generated token is listed');
+    assert.equal(listed.name, 'live test');
+  });
+
+  it('POST /renameToken updates the name', async (t) => {
+    if (!generated) return t.skip('no token was generated');
+    const res = await api('/renameToken', {
+      method: 'POST',
+      body: { token: generated.token, name: 'renamed' },
+    });
+    assert.equal(res.status, 200, res.text);
+    assert.equal(res.json.name, 'renamed');
+  });
+
+  it('GET /tokens shows the renamed token', async (t) => {
+    if (!generated) return t.skip('no token was generated');
+    const res = await api('/tokens');
+    assert.equal(res.status, 200, res.text);
+    const listed = res.json.tokens.find((item) => item.token === generated.token);
+    assert.ok(listed, 'generated token is listed');
+    assert.equal(listed.name, 'renamed');
+  });
+
+  it('POST /renameToken rejects a name over 64 characters', async (t) => {
+    if (!generated) return t.skip('no token was generated');
+    const res = await api('/renameToken', {
+      method: 'POST',
+      body: { token: generated.token, name: 'x'.repeat(65) },
+    });
+    assert.equal(res.status, 400, res.text);
   });
 
   it('POST /expireToken expires the generated token', async (t) => {

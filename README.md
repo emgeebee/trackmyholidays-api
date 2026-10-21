@@ -44,8 +44,9 @@ API Gateway throttles each stage to 10 requests per second, with bursts of up to
 | `GET` | `/holidays` | Get my holidays record |
 | `POST` | `/holidays` | Save my holidays record |
 | `PUT` | `/holidays/{id}` | Update my holidays record (currently broken, see below) |
-| `POST` | `/generateToken` | Create a long-lived token for me |
+| `POST` | `/generateToken` | Create a long-lived token for me, with an optional name |
 | `GET` | `/tokens` | List my long-lived tokens |
+| `POST` | `/renameToken` | Rename one of my tokens |
 | `POST` | `/expireToken` | Expire one of my tokens |
 | `POST` | `/docs` | Create a document |
 | `GET` | `/docs` | List my documents |
@@ -95,18 +96,28 @@ curl $API/holidays -H "Authorization: Bearer $TOKEN"
 
 Generate one while signed in with a Google ID token. It lasts 365 days by default, set by `TOKEN_EXPIRY`.
 
+An optional `name` (trimmed, up to 64 characters) is stored with the token and returned by `GET /tokens`. Tokens created before names were added have no name.
+
 ```bash
-curl -X POST $API/generateToken -H "Authorization: Bearer $GOOGLE_ID_TOKEN"
+curl -X POST $API/generateToken \
+  -H "Authorization: Bearer $GOOGLE_ID_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"CI"}'
 ```
 
 ```json
-{"token":"eyJhbGciOiJIUzI1NiIs…","sub":"103501357127260947071","expiresIn":"365d","expiresAt":"2027-10-08T18:00:00.000Z"}
+{"token":"eyJhbGciOiJIUzI1NiIs…","sub":"103501357127260947071","expiresIn":"365d","expiresAt":"2027-10-08T18:00:00.000Z","name":"CI"}
 ```
 
-List and expire tokens:
+List, rename and expire tokens:
 
 ```bash
 curl $API/tokens -H "Authorization: Bearer $TOKEN"
+
+curl -X POST $API/renameToken \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"token":"<token>","name":"laptop"}'
 
 curl -X POST $API/expireToken \
   -H "Authorization: Bearer $TOKEN" \
@@ -115,11 +126,12 @@ curl -X POST $API/expireToken \
 ```
 
 ```json
-{"tokens":[{"token":"eyJhbGciOiJIUzI1NiIs…","userid":"103501357127260947071","createdAt":"2026-10-08T18:00:00.000Z","expiresAt":"2027-10-08T18:00:00.000Z"}]}
+{"tokens":[{"token":"eyJhbGciOiJIUzI1NiIs…","userid":"103501357127260947071","name":"laptop","createdAt":"2026-10-08T18:00:00.000Z","expiresAt":"2027-10-08T18:00:00.000Z"}]}
+{"name":"laptop"}
 {"message":"Token expired."}
 ```
 
-`expireToken` returns `400` without a `token`, `404` for an unknown token and `403` for someone else's. API Gateway caches authorizer results for up to five minutes, so an expired token can keep working briefly.
+`renameToken` and `expireToken` return `400` without a `token`, `404` for an unknown token and `403` for someone else's. A name that is missing, not a string, or longer than 64 characters is `400`. API Gateway caches authorizer results for up to five minutes, so an expired token can keep working briefly.
 
 ### Documents
 

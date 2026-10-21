@@ -19,7 +19,7 @@ module.exports.generateToken = async (event, context, callback) => {
     return;
   }
 
-  const { uid: sub, email, name } = getAuthenticatedIdentity(event);
+  const { uid: sub, email, name: userName } = getAuthenticatedIdentity(event);
 
   if (!sub) {
     callback(null, {
@@ -34,8 +34,33 @@ module.exports.generateToken = async (event, context, callback) => {
   if (email) {
     claims.email = email;
   }
-  if (name) {
-    claims.name = name;
+  if (userName) {
+    claims.name = userName;
+  }
+
+  let body = {};
+  try {
+    body = event.body ? JSON.parse(event.body) : {};
+  } catch (err) {
+    body = null;
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    callback(null, {
+      statusCode: 400,
+      headers: corsHeaders(event),
+      body: JSON.stringify({ message: "Invalid request body." }),
+    });
+    return;
+  }
+
+  const tokenName = tokenStore.normaliseTokenName(body.name);
+  if (!tokenName.ok) {
+    callback(null, {
+      statusCode: 400,
+      headers: corsHeaders(event),
+      body: JSON.stringify({ message: tokenName.message }),
+    });
+    return;
   }
 
   const token = jwt.sign(claims, TOKEN_SIGNING_SECRET, {
@@ -48,7 +73,7 @@ module.exports.generateToken = async (event, context, callback) => {
     : null;
 
   try {
-    await tokenStore.saveToken(token, sub, expiresAt);
+    await tokenStore.saveToken(token, sub, expiresAt, tokenName.name);
   } catch (err) {
     console.error(err);
     callback(null, {
@@ -67,6 +92,7 @@ module.exports.generateToken = async (event, context, callback) => {
       sub,
       expiresIn: TOKEN_EXPIRY,
       expiresAt,
+      ...(tokenName.name ? { name: tokenName.name } : {}),
     }),
   });
 };

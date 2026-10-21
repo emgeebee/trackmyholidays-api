@@ -226,6 +226,17 @@ functions:
             name: authFunc
             identitySource: method.request.header.Authorization
 
+  renameToken:
+    handler: holidays/renameToken.renameToken
+    events:
+      - http:
+          path: renameToken
+          method: post
+          cors: ${self:custom.cors}
+          authorizer:
+            name: authFunc
+            identitySource: method.request.header.Authorization
+
   expireToken:
     handler: holidays/expireToken.expireToken
     events:
