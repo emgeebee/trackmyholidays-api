@@ -209,6 +209,22 @@ Opening or saving a shared document. `permission` here is the signed-in person's
 
 The report opens with a traffic summary, so errors can be put in proportion (e.g. "server errors affected 1 of 100 users, 1%"). The figures come from API Gateway access logs in `/aws/api-gateway/holidays-<stage>`, which record one JSON line per request: method, endpoint, status, latency and the signed-in user's id. The agent's `traffic_summary` tool calculates totals, distinct users, status codes, per-endpoint usage, and how many users each error affected. The numbers are computed in code, not estimated by the model.
 
+## Family tree research agent
+
+`treeResearchAgent` runs every 7 days. It uses the same Strands agent on Bedrock (model `TREE_AGENT_MODEL`, default `amazon.nova-lite-v1:0`) to research a Findmypast tree and write the results somewhere they can be compared with the original.
+
+Set `FINDMPAST_ACCESS_TOKEN` to the `fmp_access_token` cookie from a signed-in Findmypast session. CI passes the GitHub secret of the same name through on deploy. The cookie expires, so replace the secret when Findmypast starts rejecting it. The agent sends it to `https://www.findmypast.com/titan/marshal/graphql`. Without the token the run logs a message and does nothing. `FINDMPAST_SOURCE_TREE_ID` chooses which tree to read; otherwise it uses the largest tree whose title does not start with "Research".
+
+Each run:
+
+1. Reads up to 25 people from the source tree, following parents and children. It does not change that tree.
+2. Creates a new Findmypast tree titled `Research <source title> <date>` and copies those people into it, including the facts already on the source.
+3. Asks the agent to fill gaps from Findmypast hints. A fact is written only onto the research tree, and only with a fact type the live `factTypes` list accepts.
+4. When a useful value has no fact type, the agent records it as a schema extension in the report instead of inventing a type on Findmypast.
+5. Saves `reports/tree-research-<date>.md` and `.json` to the document bucket. The markdown lists facts present on the research tree that were not on the source.
+
+Family links are not recreated on the research tree. The report names each person so the two trees can still be compared.
+
 ## Development
 
 ```bash
@@ -229,6 +245,10 @@ Set as environment variables at deploy time:
 | `TOKEN_SIGNING_SECRET` | yes | Secret used to sign long-lived tokens |
 | `TOKEN_EXPIRY` | no | Long-lived token lifetime, default `365d` |
 | `L3_AGENT_MODEL` | no | Bedrock model for the log report agent |
+| `TREE_AGENT_MODEL` | no | Bedrock model for the family tree research agent |
+| `FINDMPAST_ACCESS_TOKEN` | no | Findmypast `fmp_access_token` cookie. The research agent skips its run when this is empty |
+| `FINDMPAST_SOURCE_TREE_ID` | no | Findmypast tree to research. Defaults to the largest tree that is not already a research copy |
+| `FINDMPAST_GRAPHQL_URL` | no | Findmypast GraphQL endpoint, default `https://www.findmypast.com/titan/marshal/graphql` |
 | `GIT_SHA` | no | Commit reported by `/version`, set by CI |
 
 Allowed CORS origins live in [`config/allowedOrigins.json`](config/allowedOrigins.json).
@@ -287,6 +307,8 @@ auth/auth.js            API Gateway authorizer (Google ID tokens and long-lived 
 holidays/               holidays, tokens and version handlers, plus shared helpers
 holidays/docs/          document and share link handlers and their S3/DynamoDB stores
 agents/l3Agent.js       scheduled log report agent
+agents/treeResearchAgent.js  scheduled Findmypast research agent
+agents/findmypast.js    Findmypast GraphQL client used by the research agent
 config/                 allowed CORS origins
 offline/migrations/     DynamoDB Local table definitions for `npm start`
 tests/live/             post-deploy live API tests
