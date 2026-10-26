@@ -213,7 +213,13 @@ The report opens with a traffic summary, so errors can be put in proportion (e.g
 
 `treeResearchAgent` runs every 7 days. It uses the same Strands agent on Bedrock (model `TREE_AGENT_MODEL`, default `amazon.nova-lite-v1:0`) to research a Findmypast tree and write the results somewhere they can be compared with the original.
 
-Set `FINDMPAST_ACCESS_TOKEN` to the `fmp_access_token` cookie from a signed-in Findmypast session. CI passes the GitHub secret of the same name through on deploy. The cookie expires, so replace the secret when Findmypast starts rejecting it. The agent sends it to `https://www.findmypast.com/titan/marshal/graphql`. Without the token the run logs a message and does nothing. `FINDMPAST_SOURCE_TREE_ID` chooses which tree to read; otherwise it uses the largest tree whose title does not start with "Research".
+Pass the Findmypast session cookie in the Lambda test event from the AWS console:
+
+```json
+{"token":"<fmp_access_token cookie value>"}
+```
+
+`token` is the `fmp_access_token` cookie from a signed-in Findmypast session. A payload token is used for that invocation only. The weekly schedule uses `FINDMPAST_ACCESS_TOKEN` instead, which CI passes from the GitHub secret of the same name. The cookie expires, so replace it when Findmypast starts rejecting it. The agent sends it to `https://www.findmypast.com/titan/marshal/graphql`. With neither a payload token nor the environment variable, the run logs a message and does nothing. `FINDMPAST_SOURCE_TREE_ID` chooses which tree to read; otherwise it uses the largest tree whose title does not start with "Research".
 
 Each run:
 
@@ -246,7 +252,7 @@ Set as environment variables at deploy time:
 | `TOKEN_EXPIRY` | no | Long-lived token lifetime, default `365d` |
 | `L3_AGENT_MODEL` | no | Bedrock model for the log report agent |
 | `TREE_AGENT_MODEL` | no | Bedrock model for the family tree research agent |
-| `FINDMPAST_ACCESS_TOKEN` | no | Findmypast `fmp_access_token` cookie. The research agent skips its run when this is empty |
+| `FINDMPAST_ACCESS_TOKEN` | no | Findmypast `fmp_access_token` cookie for the weekly run. A console test can pass `{"token":"..."}` instead |
 | `FINDMPAST_SOURCE_TREE_ID` | no | Findmypast tree to research. Defaults to the largest tree that is not already a research copy |
 | `FINDMPAST_GRAPHQL_URL` | no | Findmypast GraphQL endpoint, default `https://www.findmypast.com/titan/marshal/graphql` |
 | `GIT_SHA` | no | Commit reported by `/version`, set by CI |

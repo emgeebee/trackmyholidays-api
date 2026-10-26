@@ -2,8 +2,17 @@
 
 const GRAPHQL_URL =
   process.env.FINDMPAST_GRAPHQL_URL || 'https://www.findmypast.com/titan/marshal/graphql';
-const ACCESS_TOKEN = process.env.FINDMPAST_ACCESS_TOKEN || '';
 const SOURCE_TREE_ID = process.env.FINDMPAST_SOURCE_TREE_ID || '';
+
+let accessToken = process.env.FINDMPAST_ACCESS_TOKEN || '';
+
+function setAccessToken(token) {
+  accessToken = typeof token === 'string' ? token.trim() : '';
+}
+
+function hasAccessToken() {
+  return Boolean(accessToken);
+}
 
 const MAX_PEOPLE = 25;
 const FULL_NAME_FACT_TYPE_ID = 100;
@@ -121,13 +130,13 @@ function isMutation(query) {
 }
 
 function cookieHeader() {
-  if (!ACCESS_TOKEN) {
+  if (!accessToken) {
     throw new Error('FINDMPAST_ACCESS_TOKEN is not set');
   }
-  if (/[;\r\n]/.test(ACCESS_TOKEN)) {
+  if (/[;\r\n]/.test(accessToken)) {
     throw new Error('FINDMPAST_ACCESS_TOKEN contains characters that cannot go in a cookie');
   }
-  return `fmp_access_token=${ACCESS_TOKEN}`;
+  return `fmp_access_token=${accessToken}`;
 }
 
 async function graphql(query, variables) {
@@ -421,7 +430,8 @@ async function addPersonFact(personId, fact) {
 
 module.exports = {
   GRAPHQL_URL,
-  ACCESS_TOKEN,
+  setAccessToken,
+  hasAccessToken,
   MAX_PEOPLE,
   isMutation,
   graphql,

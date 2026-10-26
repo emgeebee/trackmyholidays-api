@@ -242,10 +242,19 @@ Rules:
 7. Finish with a short account of what you added and what you left out because the hint was weak.`;
 }
 
+function tokenFromEvent(event) {
+  if (!event || typeof event !== 'object' || Array.isArray(event)) return '';
+  return typeof event.token === 'string' ? event.token.trim() : '';
+}
+
 module.exports.treeResearchAgent = async (event, context, callback) => {
-  if (!findmypast.ACCESS_TOKEN) {
-    console.log('treeResearchAgent skipped: FINDMPAST_ACCESS_TOKEN is not set');
-    callback(null, { summary: 'FINDMPAST_ACCESS_TOKEN is not set' });
+  const token = tokenFromEvent(event) || process.env.FINDMPAST_ACCESS_TOKEN || '';
+  findmypast.setAccessToken(token);
+  if (!findmypast.hasAccessToken()) {
+    console.log('treeResearchAgent skipped: no token in the event payload or FINDMPAST_ACCESS_TOKEN');
+    callback(null, {
+      summary: 'No Findmypast token. Pass {"token":"<fmp_access_token>"} or set FINDMPAST_ACCESS_TOKEN.',
+    });
     return;
   }
 
@@ -343,5 +352,7 @@ module.exports.treeResearchAgent = async (event, context, callback) => {
   } catch (err) {
     console.error(err);
     callback(err);
+  } finally {
+    findmypast.setAccessToken(process.env.FINDMPAST_ACCESS_TOKEN || '');
   }
 };
