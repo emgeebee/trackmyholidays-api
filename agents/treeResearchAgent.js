@@ -28,6 +28,7 @@ function paramsFromEvent(event) {
     userid: stringFromEvent(event, ['userid', 'userId', 'user_id']),
     docId: stringFromEvent(event, ['docId', 'treeId', 'tree_id', 'doc_id']),
     token: stringFromEvent(event, ['token', 'findmypastToken', 'fmpAccessToken']),
+    overrideExisting: Boolean(event && event.overrideExisting),
   };
 }
 
@@ -395,7 +396,7 @@ module.exports.treeResearchAgent = async (event, context, callback) => {
       changes: session.changes,
       extensions: session.extensions,
       narrative,
-    });
+    }, params.overrideExisting);
 
     console.log('treeResearchAgent saved', saved.markdownKey, 'research', session.research.id);
     callback(null, {
