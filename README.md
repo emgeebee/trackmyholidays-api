@@ -210,35 +210,6 @@ Opening or saving a shared document. `permission` here is the signed-in person's
 
 The report opens with a traffic summary, so errors can be put in proportion (e.g. "server errors affected 1 of 100 users, 1%"). The figures come from API Gateway access logs in `/aws/api-gateway/holidays-<stage>`, which record one JSON line per request: method, endpoint, status, latency and the signed-in user's id. The agent's `traffic_summary` tool calculates totals, distinct users, status codes, per-endpoint usage, and how many users each error affected. The numbers are computed in code, not estimated by the model.
 
-## Family tree research agent
-
-`treeResearchAgent` runs every 7 days. It uses a Strands agent on Bedrock (model `TREE_AGENT_MODEL`, default `amazon.nova-lite-v1:0`) to research a family tree stored in this API's document store (the same `/docs` documents [famtree](https://famtree.buzz) saves) and write a comparable research copy beside it.
-
-Every run needs its parameters in the Lambda event (console test payload, or the schedule's fixed input). With neither `userid` nor `docId`, it logs a message and does nothing.
-
-```json
-{
-  "userid": "<google-sub>",
-  "docId": "family-tree",
-  "token": "<optional fmp_access_token cookie value>"
-}
-```
-
-| Param | Required | Aliases | Purpose |
-|---|---|---|---|
-| `userid` | yes | `userId`, `user_id` | Google user id that owns the `/docs` tree |
-| `docId` | yes | `treeId`, `tree_id`, `doc_id` | Family-tree document id (`type: "family-tree"`, or legacy id `family-tree`) |
-| `token` | no | `findmypastToken`, `fmpAccessToken` | Findmypast `fmp_access_token` for read-only evidence queries |
-
-`token` is optional. When present, the agent can call Findmypast GraphQL read-only for evidence. The cookie expires, so replace it when Findmypast starts rejecting it.
-
-Each run:
-
-1. Reads up to 25 people from the source document, following parents and children. It does not change that document.
-2. Creates a new document titled `Research <source name> <date>` in the same user's docs store and copies the tree into it.
-3. Asks the agent to fill gaps on the research copy. Supported person fields are the famtree ones (`date_of_birth`, `place_of_birth`, and so on). Attributes with no field are recorded as schema extensions in the report.
-4. Saves `reports/tree-research-<date>.md` and `.json` to the document bucket.
-
 ## Development
 
 ```bash
@@ -259,8 +230,6 @@ Set as environment variables at deploy time:
 | `TOKEN_SIGNING_SECRET` | yes | Secret used to sign long-lived tokens |
 | `TOKEN_EXPIRY` | no | Long-lived token lifetime, default `365d` |
 | `L3_AGENT_MODEL` | no | Bedrock model for the log report agent |
-| `TREE_AGENT_MODEL` | no | Bedrock model for the family tree research agent |
-| `FINDMPAST_GRAPHQL_URL` | no | Findmypast GraphQL endpoint, default `https://www.findmypast.com/titan/marshal/graphql` |
 | `GIT_SHA` | no | Commit reported by `/version`, set by CI |
 
 Allowed CORS origins live in [`config/allowedOrigins.json`](config/allowedOrigins.json).
@@ -319,9 +288,6 @@ auth/auth.js            API Gateway authorizer (Google ID tokens and long-lived 
 holidays/               holidays, tokens and version handlers, plus shared helpers
 holidays/docs/          document and share link handlers and their S3/DynamoDB stores
 agents/l3Agent.js       scheduled log report agent
-agents/treeResearchAgent.js  scheduled famtree document research agent
-agents/famtreeStore.js  family-tree document helpers for the research agent
-agents/findmypast.js    optional Findmypast GraphQL client for research evidence
 config/                 allowed CORS origins
 offline/migrations/     DynamoDB Local table definitions for `npm start`
 tests/live/             post-deploy live API tests

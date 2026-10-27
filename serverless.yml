@@ -88,8 +88,6 @@ provider:
     SERVICE_NAME: holidays
     LOG_LOOKBACK: 7d
     L3_AGENT_MODEL: ${env:L3_AGENT_MODEL, 'amazon.nova-lite-v1:0'}
-    TREE_AGENT_MODEL: ${env:TREE_AGENT_MODEL, 'amazon.nova-lite-v1:0'}
-    FINDMPAST_GRAPHQL_URL: ${env:FINDMPAST_GRAPHQL_URL, 'https://www.findmypast.com/titan/marshal/graphql'}
     GIT_SHA: ${env:GIT_SHA, 'local'}
     TEAMS_TABLE: teams
     TEAM_MEMBERS_TABLE: teamMembers
@@ -468,16 +466,6 @@ functions:
     events:
       - schedule:
           name: ${self:service}-${self:custom.myStage}-l3Agent
-          rate: rate(7 days)
-          enabled: true
-
-  treeResearchAgent:
-    handler: agents/treeResearchAgent.treeResearchAgent
-    timeout: 900
-    memorySize: 1024
-    events:
-      - schedule:
-          name: ${self:service}-${self:custom.myStage}-treeResearchAgent
           rate: rate(7 days)
           enabled: true
 
