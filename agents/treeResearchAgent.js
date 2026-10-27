@@ -75,22 +75,25 @@ function renderReport(context, changes, narrative) {
   return lines.filter((line) => line !== undefined).join('\n');
 }
 
-async function saveReport(date, markdown, json) {
+async function saveReport(date, markdown, json, overrideExisting = false) {
   if (!DOCS_BUCKET) throw new Error('DOCS_BUCKET is not configured');
   const markdownKey = `reports/tree-research-${date}.md`;
-  const jsonKey = `reports/tree-research-${date}.json`;
+  const jsonKey = overrideExisting ? 'reports/tree-research-latest.json' : `reports/tree-research-${date}.json`;
+  
   await s3.send(new PutObjectCommand({
     Bucket: DOCS_BUCKET,
     Key: markdownKey,
     Body: markdown,
     ContentType: 'text/markdown',
   }));
+  
   await s3.send(new PutObjectCommand({
     Bucket: DOCS_BUCKET,
     Key: jsonKey,
     Body: JSON.stringify(json, null, 2),
     ContentType: 'application/json',
   }));
+  
   return { markdownKey, jsonKey };
 }
 
@@ -223,7 +226,8 @@ function buildTools(tool, z, session) {
         name: 'graphql_query',
         description:
           'Run a read-only GraphQL query against Findmypast for evidence. Mutations are refused. ' +
-          'Use this to search records or inspect results before updating the research document.',
+          'Use this to search records or inspect results before updating the research document. ' +
+          'Common mistakes: use personId (singular), not personIds or ids. Use proper GraphQL syntax.',
         inputSchema: z.object({
           query: z.string(),
           variables: z.record(z.string(), z.any()).optional(),
@@ -232,8 +236,50 @@ function buildTools(tool, z, session) {
           if (findmypast.isMutation(query)) {
             return 'Refused. graphql_query is read-only. Use update_person or append_note to write.';
           }
-          const body = await findmypast.graphql(query, variables || {});
-          return clip(body);
+          
+          // Validate for common mistakes
+          const vars = variables || {};
+          const varNames = Object.keys(vars);
+          const warnings = [];
+          
+          if (varNames.includes('ids') || varNames.includes('personIds')) {
+            warnings.push('Warning: You passed "ids" or "personIds" but most queries expect "personId" (singular).');
+          }
+          
+          if (query.includes('$ids') || query.includes('$personIds')) {
+            warnings.push('Warning: Query defines $ids or $personIds variable. Check if the schema expects singular "personId" instead.');
+          }
+          
+          try {
+            const body = await findmypast.graphql(query, vars);
+            
+            // Check for GraphQL errors in response
+            if (body.errors && body.errors.length > 0) {
+              const errorMessages = body.errors.map(e => e.message).join('; ');
+              return {
+                success: false,
+                errors: body.errors,
+                message: `GraphQL returned errors: ${errorMessages}`,
+                warnings: warnings.length > 0 ? warnings : undefined,
+                hint: 'Check the Findmypast GraphQL schema. Common issues: wrong variable names (use personId not ids), wrong query structure, or missing required fields.',
+              };
+            }
+            
+            return {
+              success: true,
+              data: body.data,
+              warnings: warnings.length > 0 ? warnings : undefined,
+            };
+          } catch (err) {
+            return {
+              success: false,
+              error: err.message,
+              statusCode: err.statusCode,
+              graphqlErrors: err.graphqlErrors,
+              warnings: warnings.length > 0 ? warnings : undefined,
+              hint: 'Common fixes: verify variable names match the schema (personId not ids), check query syntax, ensure all required arguments are provided.',
+            };
+          }
         },
       })
     );
