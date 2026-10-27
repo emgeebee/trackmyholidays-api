@@ -1,6 +1,7 @@
 'use strict';
 
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const famtreeStore = require('./famtreeStore');
 const findmypast = require('./findmypast');
 
 const s3 = new S3Client({});
@@ -13,70 +14,59 @@ function clip(value, limit = 12000) {
   return `${text.slice(0, limit)}\n… truncated`;
 }
 
-function personLabel(person) {
-  const name = findmypast.preferredName(person);
-  return [name.givenNames, name.surnames].filter(Boolean).join(' ') || person.id;
-}
-
-function gapSummary(person) {
-  const facts = person.facts || [];
-  const types = new Set(facts.map((fact) => (fact.factType && fact.factType.description) || ''));
-  const missing = [];
-  if (!person.birthDate && ![...types].some((type) => /birth/i.test(type))) missing.push('birth');
-  if (!person.birthPlace && !facts.some((fact) => /birth/i.test(fact.factType && fact.factType.description || '') && fact.place)) {
-    missing.push('birth place');
+function stringFromEvent(event, keys) {
+  if (!event || typeof event !== 'object' || Array.isArray(event)) return '';
+  const names = Array.isArray(keys) ? keys : [keys];
+  for (const key of names) {
+    if (typeof event[key] === 'string' && event[key].trim()) return event[key].trim();
   }
-  if (!person.isLiving && !person.deathDate && ![...types].some((type) => /death|burial/i.test(type))) {
-    missing.push('death');
-  }
-  return missing;
+  return '';
 }
 
-function buildDiff(mapping, extensions) {
-  return mapping.map((entry) => ({
-    sourcePersonId: entry.source.id,
-    researchPersonId: entry.research && entry.research.id,
-    name: personLabel(entry.source),
-    facts: entry.research
-      ? findmypast.diffPerson(entry.source, entry.research)
-      : { added: [], missingFromResearchCopy: (entry.source.facts || []).map(findmypast.factSignature) },
-    extensions: extensions.filter((item) => item.researchPersonId === (entry.research && entry.research.id)),
-  }));
+function paramsFromEvent(event) {
+  return {
+    userid: stringFromEvent(event, ['userid', 'userId', 'user_id']),
+    docId: stringFromEvent(event, ['docId', 'treeId', 'tree_id', 'doc_id']),
+    token: stringFromEvent(event, ['token', 'findmypastToken', 'fmpAccessToken']),
+  };
 }
 
-function renderReport(context, diff, narrative) {
+function renderReport(context, changes, narrative) {
   const lines = [
     `# Family tree research ${context.date}`,
     '',
-    `Source tree: ${context.source.title || context.source.id} (\`${context.source.id}\`)`,
-    `Research tree: ${context.researchTitle} (\`${context.researchTree.id}\`)`,
+    `Source document: ${context.source.name} (\`${context.source.id}\`) owned by \`${context.source.userid}\``,
+    `Research document: ${context.research.name} (\`${context.research.id}\`)`,
     '',
-    'The source tree was only read. Facts the agent added are on the research tree, so the two trees can be compared in Findmypast.',
-    context.copiedRootOnly
-      ? 'Only the root person was copied. Findmypast rejected a tree that included the wider family in one create call.'
-      : `Copied ${context.copiedCount} people into the research tree. Family links are not copied; the relationship list below is from the source tree.`,
-    context.truncated ? `The walk stopped at ${findmypast.MAX_PEOPLE} people.` : '',
+    'The source document was only read. Updates were written to the research document in the docs store, so the two trees can be compared in famtree.',
+    context.truncated ? `The walk stopped at ${famtreeStore.MAX_PEOPLE} people.` : '',
+    `People considered: ${context.peopleCount}.`,
     '',
-    '## Differences',
+    '## Changes',
     '',
   ];
 
-  for (const person of diff) {
-    lines.push(`### ${person.name}`);
+  if (!changes.length) {
+    lines.push('No person fields were updated.');
     lines.push('');
-    if (!person.facts.added.length) {
-      lines.push('No new facts on the research copy.');
-    } else {
-      for (const fact of person.facts.added) {
-        const detail = [fact.type, fact.date, fact.place, fact.description, fact.address].filter(Boolean).join(' — ');
-        lines.push(`- Added: ${detail}`);
-      }
+  }
+
+  for (const change of changes) {
+    lines.push(`### ${change.name} (\`${change.personId}\`)`);
+    lines.push('');
+    for (const [field, value] of Object.entries(change.fields || {})) {
+      lines.push(`- Set \`${field}\` to ${JSON.stringify(value)}`);
     }
-    if (person.facts.missingFromResearchCopy.length) {
-      lines.push(`- ${person.facts.missingFromResearchCopy.length} source facts were not on the research copy.`);
-    }
-    for (const extension of person.extensions) {
-      lines.push(`- Schema extension \`${extension.field}\`: ${extension.value} (${extension.evidence})`);
+    if (change.evidence) lines.push(`- Evidence: ${change.evidence}`);
+    lines.push('');
+  }
+
+  if (context.extensions.length) {
+    lines.push('## Schema extensions', '');
+    for (const extension of context.extensions) {
+      lines.push(
+        `- \`${extension.personId}\` \`${extension.field}\`: ${extension.value} (${extension.evidence})`
+      );
     }
     lines.push('');
   }
@@ -108,90 +98,117 @@ async function saveReport(date, markdown, json, overrideExisting = false) {
 }
 
 function buildTools(tool, z, session) {
-  const researchIds = () => new Set(session.mapping.filter((entry) => entry.research).map((entry) => entry.research.id));
+  const knownIds = () => new Set(session.people.map((person) => person.id));
 
-  const listHints = tool({
-    name: 'list_hints',
+  const listPeople = tool({
+    name: 'list_people',
     description:
-      'Read pending Findmypast hints for a person on the source tree. ' +
-      'Pass the source person id. Hints are evidence; they are not written anywhere.',
+      'List people already copied into the research document, with gaps the research should try to fill.',
+    inputSchema: z.object({}),
+    callback: async () => clip(session.people.map(famtreeStore.personSnapshot)),
+  });
+
+  const getPerson = tool({
+    name: 'get_person',
+    description: 'Read one person from the research document by id.',
     inputSchema: z.object({
-      sourcePersonId: z.string().describe('Person id on the source tree, from the prompt mapping'),
+      personId: z.string(),
     }),
-    callback: async ({ sourcePersonId }) => {
-      const known = session.mapping.some((entry) => entry.source.id === sourcePersonId);
-      if (!known) return `Unknown source person ${sourcePersonId}`;
-      const hints = await findmypast.hintsForPerson(session.source.id, sourcePersonId);
-      return clip(hints);
+    callback: async ({ personId }) => {
+      const person = session.research.doc.tree.individuals.find((entry) => entry.id === personId);
+      if (!person) return `Unknown person ${personId}`;
+      return clip(famtreeStore.personSnapshot(person));
     },
   });
 
-  const factTypes = tool({
-    name: 'fact_types',
+  const updatePerson = tool({
+    name: 'update_person',
     description:
-      'List fact types the research tree accepts, including which of date, place and description each type allows. ' +
-      'Use one of these ids for add_fact. This is the live schema.',
+      'Update one or more fields on a person in the research document. ' +
+      `Supported fields: ${famtreeStore.PERSON_FIELDS.join(', ')}. ` +
+      'Only set a field when Findmypast evidence supports it.',
     inputSchema: z.object({
-      researchPersonId: z.string(),
+      personId: z.string(),
+      given_name: z.string().optional(),
+      surname: z.string().optional(),
+      surname_at_birth: z.string().optional(),
+      known_as: z.string().optional(),
+      gender: z.string().optional(),
+      date_of_birth: z.string().optional(),
+      date_of_death: z.string().optional(),
+      is_deceased: z.boolean().optional(),
+      place_of_birth: z.string().optional(),
+      place_of_death: z.string().optional(),
+      notes: z.string().optional(),
+      evidence: z.string().describe('Findmypast source or query result this update came from'),
     }),
-    callback: async ({ researchPersonId }) => {
-      if (!researchIds().has(researchPersonId)) return `Unknown research person ${researchPersonId}`;
-      const types = await findmypast.factTypes(session.researchTree.id, researchPersonId);
-      return clip(types.map((type) => ({
-        id: type.id,
-        description: type.description,
-        shape: type.shape,
-      })));
-    },
-  });
-
-  const addFact = tool({
-    name: 'add_fact',
-    description:
-      'Add one fact to a person on the research tree. Refuses source-tree person ids. ' +
-      'factTypeId must come from fact_types. Only add a fact a hint supports.',
-    inputSchema: z.object({
-      researchPersonId: z.string(),
-      factTypeId: z.number().int(),
-      originalDate: z.string().optional().describe('Date text, for example "12 Mar 1891" or "1891"'),
-      placeName: z.string().optional(),
-      description: z.string().optional(),
-      address: z.string().optional(),
-      evidence: z.string().describe('Hint source name, year and place this fact came from'),
-    }),
-    callback: async ({ researchPersonId, factTypeId, originalDate, placeName, description, address, evidence }) => {
-      if (!researchIds().has(researchPersonId)) {
-        return `Refused. ${researchPersonId} is not a person on the research tree.`;
+    callback: async (input) => {
+      const { personId, evidence, ...fields } = input;
+      if (!knownIds().has(personId)) {
+        return `Refused. ${personId} is not a person on the research document.`;
       }
-      const created = await findmypast.addPersonFact(researchPersonId, {
-        factTypeId,
-        originalDate,
-        placeName,
-        description,
-        address,
+      const before = session.research.doc.tree.individuals.find((entry) => entry.id === personId);
+      session.research.doc.tree = famtreeStore.updatePerson(session.research.doc.tree, personId, fields);
+      session.research.doc = await famtreeStore.saveDoc(session.source.userid, session.research.doc);
+      const cleaned = {};
+      for (const key of famtreeStore.PERSON_FIELDS) {
+        if (key in fields) cleaned[key] = fields[key];
+      }
+      session.changes.push({
+        personId,
+        name: famtreeStore.personLabel(before),
+        fields: cleaned,
+        evidence,
       });
-      session.added.push({ researchPersonId, factTypeId, originalDate, placeName, description, address, evidence });
-      return clip({ saved: true, fact: created && created.fact, evidence });
+      const after = session.research.doc.tree.individuals.find((entry) => entry.id === personId);
+      return clip({ saved: true, person: famtreeStore.personSnapshot(after), evidence });
+    },
+  });
+
+  const appendNote = tool({
+    name: 'append_note',
+    description:
+      'Append a research note to a person on the research document without replacing existing notes.',
+    inputSchema: z.object({
+      personId: z.string(),
+      note: z.string(),
+      evidence: z.string(),
+    }),
+    callback: async ({ personId, note, evidence }) => {
+      if (!knownIds().has(personId)) {
+        return `Refused. ${personId} is not a person on the research document.`;
+      }
+      const before = session.research.doc.tree.individuals.find((entry) => entry.id === personId);
+      const text = `${note.trim()} [${evidence.trim()}]`;
+      session.research.doc.tree = famtreeStore.appendNote(session.research.doc.tree, personId, text);
+      session.research.doc = await famtreeStore.saveDoc(session.source.userid, session.research.doc);
+      session.changes.push({
+        personId,
+        name: famtreeStore.personLabel(before),
+        fields: { notes: text },
+        evidence,
+      });
+      return clip({ saved: true, note: text });
     },
   });
 
   const recordExtension = tool({
     name: 'record_extension',
     description:
-      'Record a useful attribute that fact_types does not have a type for. ' +
-      'It is stored in this run\'s research report, not sent to Findmypast as an invented fact type.',
+      'Record a useful attribute that the famtree person schema cannot store. ' +
+      'It is kept in this run\'s research report only.',
     inputSchema: z.object({
-      researchPersonId: z.string(),
+      personId: z.string(),
       field: z.string().describe('Short field name, for example occupation or emigrationShip'),
       value: z.string(),
       evidence: z.string(),
     }),
-    callback: async ({ researchPersonId, field, value, evidence }) => {
-      if (!researchIds().has(researchPersonId)) {
-        return `Refused. ${researchPersonId} is not a person on the research tree.`;
+    callback: async ({ personId, field, value, evidence }) => {
+      if (!knownIds().has(personId)) {
+        return `Refused. ${personId} is not a person on the research document.`;
       }
       const extension = {
-        researchPersonId,
+        personId,
         field: field.trim().slice(0, 64),
         value: value.trim().slice(0, 500),
         evidence: evidence.trim().slice(0, 500),
@@ -201,105 +218,106 @@ function buildTools(tool, z, session) {
     },
   });
 
-  const graphqlQuery = tool({
-    name: 'graphql_query',
-    description:
-      'Run a read-only GraphQL query against Findmypast. Mutations are refused; use add_fact to write. ' +
-      'Common mistakes: use personId (singular), not personIds or ids. Use proper GraphQL syntax.',
-    inputSchema: z.object({
-      query: z.string(),
-      variables: z.record(z.string(), z.any()).optional(),
-    }),
-    callback: async ({ query, variables }) => {
-      if (findmypast.isMutation(query)) {
-        return 'Refused. graphql_query is read-only. Use add_fact or record_extension.';
-      }
-      
-      // Validate for common mistakes
-      const vars = variables || {};
-      const varNames = Object.keys(vars);
-      const warnings = [];
-      
-      if (varNames.includes('ids') || varNames.includes('personIds')) {
-        warnings.push('Warning: You passed "ids" or "personIds" but most queries expect "personId" (singular).');
-      }
-      
-      if (query.includes('$ids') || query.includes('$personIds')) {
-        warnings.push('Warning: Query defines $ids or $personIds variable. Check if the schema expects singular "personId" instead.');
-      }
-      
-      try {
-        const body = await findmypast.graphql(query, vars);
-        
-        // Check for GraphQL errors in response
-        if (body.errors && body.errors.length > 0) {
-          const errorMessages = body.errors.map(e => e.message).join('; ');
-          return {
-            success: false,
-            errors: body.errors,
-            message: `GraphQL returned errors: ${errorMessages}`,
-            warnings: warnings.length > 0 ? warnings : undefined,
-            hint: 'Check the Findmypast GraphQL schema. Common issues: wrong variable names (use personId not ids), wrong query structure, or missing required fields.',
-          };
-        }
-        
-        return {
-          success: true,
-          data: body.data,
-          warnings: warnings.length > 0 ? warnings : undefined,
-        };
-      } catch (err) {
-        return {
-          success: false,
-          error: err.message,
-          statusCode: err.statusCode,
-          graphqlErrors: err.graphqlErrors,
-          warnings: warnings.length > 0 ? warnings : undefined,
-          hint: 'Common fixes: verify variable names match the schema (personId not ids), check query syntax, ensure all required arguments are provided.',
-        };
-      }
-    },
-  });
+  const tools = [listPeople, getPerson, updatePerson, appendNote, recordExtension];
 
-  return [listHints, factTypes, addFact, recordExtension, graphqlQuery];
+  if (findmypast.hasAccessToken()) {
+    tools.push(
+      tool({
+        name: 'graphql_query',
+        description:
+          'Run a read-only GraphQL query against Findmypast for evidence. Mutations are refused. ' +
+          'Use this to search records or inspect results before updating the research document. ' +
+          'Common mistakes: use personId (singular), not personIds or ids. Use proper GraphQL syntax.',
+        inputSchema: z.object({
+          query: z.string(),
+          variables: z.record(z.string(), z.any()).optional(),
+        }),
+        callback: async ({ query, variables }) => {
+          if (findmypast.isMutation(query)) {
+            return 'Refused. graphql_query is read-only. Use update_person or append_note to write.';
+          }
+          
+          // Validate for common mistakes
+          const vars = variables || {};
+          const varNames = Object.keys(vars);
+          const warnings = [];
+          
+          if (varNames.includes('ids') || varNames.includes('personIds')) {
+            warnings.push('Warning: You passed "ids" or "personIds" but most queries expect "personId" (singular).');
+          }
+          
+          if (query.includes('$ids') || query.includes('$personIds')) {
+            warnings.push('Warning: Query defines $ids or $personIds variable. Check if the schema expects singular "personId" instead.');
+          }
+          
+          try {
+            const body = await findmypast.graphql(query, vars);
+            
+            // Check for GraphQL errors in response
+            if (body.errors && body.errors.length > 0) {
+              const errorMessages = body.errors.map(e => e.message).join('; ');
+              return {
+                success: false,
+                errors: body.errors,
+                message: `GraphQL returned errors: ${errorMessages}`,
+                warnings: warnings.length > 0 ? warnings : undefined,
+                hint: 'Check the Findmypast GraphQL schema. Common issues: wrong variable names (use personId not ids), wrong query structure, or missing required fields.',
+              };
+            }
+            
+            return {
+              success: true,
+              data: body.data,
+              warnings: warnings.length > 0 ? warnings : undefined,
+            };
+          } catch (err) {
+            return {
+              success: false,
+              error: err.message,
+              statusCode: err.statusCode,
+              graphqlErrors: err.graphqlErrors,
+              warnings: warnings.length > 0 ? warnings : undefined,
+              hint: 'Common fixes: verify variable names match the schema (personId not ids), check query syntax, ensure all required arguments are provided.',
+            };
+          }
+        },
+      })
+    );
+  }
+
+  return tools;
 }
 
 function buildPrompt(session) {
-  const people = session.mapping.map((entry) => ({
-    name: personLabel(entry.source),
-    sourcePersonId: entry.source.id,
-    researchPersonId: entry.research && entry.research.id,
-    gaps: gapSummary(entry.source),
-    facts: (entry.source.facts || []).map(findmypast.factSignature),
-  }));
+  const people = session.people.map(famtreeStore.personSnapshot);
+  const fmp = findmypast.hasAccessToken()
+    ? 'Use graphql_query against Findmypast to gather evidence before updating anyone.'
+    : 'No Findmypast token is configured, so only record gaps and extensions; do not invent facts.';
 
-  return `Research the Findmypast tree "${session.source.title}" and add supported details to the research tree "${session.researchTitle}" (${session.researchTree.id}).
+  return `Research the famtree document "${session.source.name}" and add supported details to the research document "${session.research.name}" (${session.research.id}).
 
-People already copied (source id -> research id):
+People on the research copy:
 ${clip(people, 20000)}
 
 Rules:
-1. Call list_hints with a source person id before adding anything about that person.
-2. Add a fact only when a hint gives the value. Put the hint's source name, year and place in evidence.
-3. Call fact_types and use one of those ids. Match the fact to the shape: do not send a place to a type whose shape has hasPlaceAndAddressFields false.
-4. When a useful value has no fact type, call record_extension. Do not invent a factTypeId.
-5. Do not try to write to the source tree. The tools reject those ids.
-6. Prefer people with gaps. Stop after the clearest supported additions.
-7. Finish with a short account of what you added and what you left out because the hint was weak.`;
-}
-
-function tokenFromEvent(event) {
-  if (!event || typeof event !== 'object' || Array.isArray(event)) return '';
-  return typeof event.token === 'string' ? event.token.trim() : '';
+1. Call list_people or get_person before updating anyone.
+2. Prefer people with gaps. Only fill a field when evidence supports it.
+3. ${fmp}
+4. Use update_person for schema fields. Use append_note for narrative research notes. Use record_extension when the schema has no field.
+5. Do not invent dates, places or relationships.
+6. Stop after the clearest supported additions.
+7. Finish with a short account of what you added and what you left out.`;
 }
 
 module.exports.treeResearchAgent = async (event, context, callback) => {
-  const token = tokenFromEvent(event) || process.env.FINDMPAST_ACCESS_TOKEN || '';
-  findmypast.setAccessToken(token);
-  if (!findmypast.hasAccessToken()) {
-    console.log('treeResearchAgent skipped: no token in the event payload or FINDMPAST_ACCESS_TOKEN');
+  const params = paramsFromEvent(event);
+  findmypast.setAccessToken(params.token);
+
+  if (!params.userid || !params.docId) {
+    console.log('treeResearchAgent skipped: userid and docId are required event params');
     callback(null, {
-      summary: 'No Findmypast token. Pass {"token":"<fmp_access_token>"} or set FINDMPAST_ACCESS_TOKEN.',
+      summary:
+        'Pass {"userid":"<google-sub>","docId":"<family-tree-doc-id>","token":"<optional-fmp_access_token>"}.',
     });
     return;
   }
@@ -307,37 +325,33 @@ module.exports.treeResearchAgent = async (event, context, callback) => {
   const date = new Date().toISOString().slice(0, 10);
   const session = {
     source: null,
-    researchTree: null,
-    researchTitle: '',
-    mapping: [],
-    added: [],
+    research: null,
+    people: [],
+    changes: [],
     extensions: [],
-    copiedRootOnly: false,
     truncated: false,
-    copiedCount: 0,
   };
 
   try {
-    const trees = await findmypast.listTrees();
-    session.source = findmypast.chooseSourceTree(trees);
-    if (!session.source.rootPerson || !session.source.rootPerson.id) {
-      throw new Error(`Tree ${session.source.id} has no root person`);
+    const trees = await famtreeStore.listFamilyTrees(params.userid);
+    if (!trees.length) {
+      callback(null, {
+        summary: `No family-tree documents found for userid ${params.userid}.`,
+      });
+      return;
     }
 
-    const walked = await findmypast.walkTree(session.source.rootPerson.id);
+    session.source = famtreeStore.chooseSourceTree(trees, params.docId);
+    const walked = famtreeStore.walkPeople(session.source.doc.tree);
+    session.people = walked.people;
     session.truncated = walked.truncated;
-    session.researchTitle = `Research ${session.source.title || 'tree'} ${date}`;
-    const created = await findmypast.createResearchTree(session.researchTitle, walked.people);
-    session.researchTree = created.tree;
-    session.copiedRootOnly = created.copiedRootOnly;
-    session.copiedCount = created.requestedCount;
 
-    const researchIds = (created.tree.people || []).map((person) => person.id);
-    const copied = session.copiedRootOnly ? walked.people.slice(0, 1) : walked.people;
-    session.mapping = copied.map((source, index) => ({
-      source,
-      research: researchIds[index] ? { id: researchIds[index] } : null,
-    }));
+    const research = famtreeStore.createResearchCopy(session.source.doc, date);
+    session.research = {
+      id: research.id,
+      name: research.name,
+      doc: await famtreeStore.saveDoc(session.source.userid, research.doc),
+    };
 
     const [{ Agent, tool, BedrockModel }, { z }] = await Promise.all([
       import('@strands-agents/sdk'),
@@ -355,50 +369,45 @@ module.exports.treeResearchAgent = async (event, context, callback) => {
       model,
       tools: buildTools(tool, z, session),
       systemPrompt:
-        'You research a Findmypast family tree. You read the source tree and write only to the research tree created for this run. ' +
-        'Every new fact needs a Findmypast hint. Attributes with no fact type go in record_extension so the research report can hold them.',
+        'You research a family tree stored in this API\'s document store. ' +
+        'Read the source document and write only to the research document created for this run. ' +
+        'Every update needs evidence. Attributes with no person field go in record_extension.',
     });
 
     const result = await agent.invoke(buildPrompt(session));
     const narrative = result && result.lastMessage ? String(result.lastMessage) : '';
 
-    for (const entry of session.mapping) {
-      if (!entry.research) continue;
-      try {
-        entry.research = await findmypast.readPerson(entry.research.id);
-      } catch (err) {
-        console.error('reread research person failed', entry.research.id, err.message);
-      }
-    }
-
-    const diff = buildDiff(session.mapping, session.extensions);
     const markdown = renderReport({
       date,
       source: session.source,
-      researchTree: session.researchTree,
-      researchTitle: session.researchTitle,
-      copiedRootOnly: session.copiedRootOnly,
+      research: session.research,
       truncated: session.truncated,
-      copiedCount: session.copiedCount,
-    }, diff, narrative);
+      peopleCount: session.people.length,
+      extensions: session.extensions,
+    }, session.changes, narrative);
 
     const saved = await saveReport(date, markdown, {
       stage: STAGE,
       date,
-      graphqlUrl: findmypast.GRAPHQL_URL,
-      sourceTreeId: session.source.id,
-      researchTreeId: session.researchTree.id,
-      diff,
+      sourceUserId: session.source.userid,
+      sourceDocId: session.source.id,
+      researchDocId: session.research.id,
+      changes: session.changes,
       extensions: session.extensions,
       narrative,
     });
 
-    console.log('treeResearchAgent saved', saved.markdownKey);
-    callback(null, { summary: narrative.slice(0, 2000), report: saved.markdownKey });
+    console.log('treeResearchAgent saved', saved.markdownKey, 'research', session.research.id);
+    callback(null, {
+      summary: narrative.slice(0, 2000),
+      report: saved.markdownKey,
+      researchDocId: session.research.id,
+      sourceDocId: session.source.id,
+    });
   } catch (err) {
     console.error(err);
     callback(err);
   } finally {
-    findmypast.setAccessToken(process.env.FINDMPAST_ACCESS_TOKEN || '');
+    findmypast.setAccessToken('');
   }
 };
