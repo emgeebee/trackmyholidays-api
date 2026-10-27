@@ -90,8 +90,6 @@ provider:
     L3_AGENT_MODEL: ${env:L3_AGENT_MODEL, 'amazon.nova-lite-v1:0'}
     TREE_AGENT_MODEL: ${env:TREE_AGENT_MODEL, 'amazon.nova-lite-v1:0'}
     FINDMPAST_GRAPHQL_URL: ${env:FINDMPAST_GRAPHQL_URL, 'https://www.findmypast.com/titan/marshal/graphql'}
-    FINDMPAST_ACCESS_TOKEN: ${env:FINDMPAST_ACCESS_TOKEN, ''}
-    FINDMPAST_SOURCE_TREE_ID: ${env:FINDMPAST_SOURCE_TREE_ID, ''}
     GIT_SHA: ${env:GIT_SHA, 'local'}
     TEAMS_TABLE: teams
     TEAM_MEMBERS_TABLE: teamMembers
