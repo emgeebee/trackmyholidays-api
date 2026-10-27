@@ -7,6 +7,7 @@ const findmypast = require('./findmypast');
 const s3 = new S3Client({});
 const DOCS_BUCKET = process.env.DOCS_BUCKET;
 const STAGE = process.env.STAGE || 'dev';
+const MAX_CONSECUTIVE_GRAPHQL_ERRORS = Number(process.env.TREE_AGENT_MAX_GRAPHQL_ERRORS || 5);
 
 function clip(value, limit = 12000) {
   const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
@@ -96,6 +97,74 @@ async function saveReport(date, markdown, json, overrideExisting = false) {
   }));
   
   return { markdownKey, jsonKey };
+}
+
+function noteGraphqlSuccess(session) {
+  session.graphqlConsecutiveErrors = 0;
+  session.graphqlLastError = '';
+}
+
+function noteGraphqlFailure(session, message) {
+  const text = String(message || 'unknown GraphQL error').slice(0, 500);
+  session.graphqlConsecutiveErrors = (session.graphqlConsecutiveErrors || 0) + 1;
+  session.graphqlLastError = text;
+  if (session.graphqlConsecutiveErrors >= MAX_CONSECUTIVE_GRAPHQL_ERRORS) {
+    session.abortReason =
+      `Stopped after ${session.graphqlConsecutiveErrors} consecutive GraphQL query failures. ` +
+      `Last error: ${text}`;
+    console.error('treeResearchAgent aborting:', session.abortReason);
+  }
+}
+
+function graphqlFixHints(errors, query, variables) {
+  const messages = [];
+  if (Array.isArray(errors)) {
+    for (const error of errors) {
+      if (error && error.message) messages.push(String(error.message));
+    }
+  } else if (errors) {
+    messages.push(String(errors));
+  }
+
+  const hints = [
+    'Read the GraphQL error, rewrite this query to fix it, and call graphql_query again with the corrected query.',
+  ];
+  const joined = messages.join(' | ');
+
+  if (/Cannot query field|Unknown field|is not defined/i.test(joined)) {
+    hints.push('Wrong or missing field name: drop or rename that field; only request scalar fields or add the required sub-selection.');
+  }
+  if (/must have a selection|subfields|must not have a selection/i.test(joined)) {
+    hints.push('Selection set issue: object fields need `{ ... }` subfields; scalars must not have braces.');
+  }
+  if (/Unknown argument|got invalid value|Variable .* of type|was not provided|required/i.test(joined)) {
+    hints.push('Argument/variable mismatch: align variable names and types with the schema (often `personId: ID!`, not `ids`/`personIds`).');
+  }
+  if (/Syntax Error|Unexpected/i.test(joined)) {
+    hints.push('Fix GraphQL syntax (braces, commas, `$variables`, operation name) before retrying.');
+  }
+
+  const varNames = Object.keys(variables || {});
+  if (varNames.includes('ids') || varNames.includes('personIds') || /\$ids\b|\$personIds\b/.test(query || '')) {
+    hints.push('Prefer singular `personId` unless the error explicitly names a plural argument.');
+  }
+
+  hints.push(
+    `Retry with a fixed query. After ${MAX_CONSECUTIVE_GRAPHQL_ERRORS} consecutive failures the run stops — change something real each retry, do not resubmit the same query.`
+  );
+  return hints;
+}
+
+function graphqlFailureHint(session, errors, query, variables) {
+  if (session.abortReason) {
+    return 'Stop researching. Do not call graphql_query again.';
+  }
+  const fixes = graphqlFixHints(errors, query, variables);
+  const left = Math.max(0, MAX_CONSECUTIVE_GRAPHQL_ERRORS - (session.graphqlConsecutiveErrors || 0));
+  return [
+    `Fix on the fly (${left} attempt${left === 1 ? '' : 's'} left before abort).`,
+    ...fixes,
+  ].join(' ');
 }
 
 function buildTools(tool, z, session) {
@@ -228,7 +297,8 @@ function buildTools(tool, z, session) {
         description:
           'Run a read-only GraphQL query against Findmypast for evidence. Mutations are refused. ' +
           'Use this to search records or inspect results before updating the research document. ' +
-          'Common mistakes: use personId (singular), not personIds or ids. Use proper GraphQL syntax.',
+          'If the response has success:false, read errors/hint, fix the query (field names, required subfields, argument names/types), ' +
+          'and call graphql_query again with the corrected query. Prefer personId (singular) over personIds/ids.',
         inputSchema: z.object({
           query: z.string(),
           variables: z.record(z.string(), z.any()).optional(),
@@ -237,49 +307,67 @@ function buildTools(tool, z, session) {
           if (findmypast.isMutation(query)) {
             return 'Refused. graphql_query is read-only. Use update_person or append_note to write.';
           }
-          
+
+          if (session.abortReason) {
+            return clip({
+              success: false,
+              aborted: true,
+              message: session.abortReason,
+            });
+          }
+
           // Validate for common mistakes
           const vars = variables || {};
           const varNames = Object.keys(vars);
           const warnings = [];
-          
+
           if (varNames.includes('ids') || varNames.includes('personIds')) {
             warnings.push('Warning: You passed "ids" or "personIds" but most queries expect "personId" (singular).');
           }
-          
+
           if (query.includes('$ids') || query.includes('$personIds')) {
             warnings.push('Warning: Query defines $ids or $personIds variable. Check if the schema expects singular "personId" instead.');
           }
-          
+
           try {
             const body = await findmypast.graphql(query, vars);
-            
+
             // Check for GraphQL errors in response
             if (body.errors && body.errors.length > 0) {
-              const errorMessages = body.errors.map(e => e.message).join('; ');
-              return {
+              const errorMessages = body.errors.map((e) => e.message).join('; ');
+              noteGraphqlFailure(session, errorMessages);
+              return clip({
                 success: false,
                 errors: body.errors,
                 message: `GraphQL returned errors: ${errorMessages}`,
                 warnings: warnings.length > 0 ? warnings : undefined,
-                hint: 'Check the Findmypast GraphQL schema. Common issues: wrong variable names (use personId not ids), wrong query structure, or missing required fields.',
-              };
+                consecutiveErrors: session.graphqlConsecutiveErrors,
+                aborted: Boolean(session.abortReason),
+                fixHints: session.abortReason ? undefined : graphqlFixHints(body.errors, query, vars),
+                hint: graphqlFailureHint(session, body.errors, query, vars),
+              });
             }
-            
-            return {
+
+            noteGraphqlSuccess(session);
+            return clip({
               success: true,
               data: body.data,
               warnings: warnings.length > 0 ? warnings : undefined,
-            };
+            });
           } catch (err) {
-            return {
+            const graphqlErrors = err.graphqlErrors || [{ message: err.message }];
+            noteGraphqlFailure(session, err.message);
+            return clip({
               success: false,
               error: err.message,
               statusCode: err.statusCode,
               graphqlErrors: err.graphqlErrors,
               warnings: warnings.length > 0 ? warnings : undefined,
-              hint: 'Common fixes: verify variable names match the schema (personId not ids), check query syntax, ensure all required arguments are provided.',
-            };
+              consecutiveErrors: session.graphqlConsecutiveErrors,
+              aborted: Boolean(session.abortReason),
+              fixHints: session.abortReason ? undefined : graphqlFixHints(graphqlErrors, query, vars),
+              hint: graphqlFailureHint(session, graphqlErrors, query, vars),
+            });
           }
         },
       })
@@ -292,7 +380,13 @@ function buildTools(tool, z, session) {
 function buildPrompt(session) {
   const people = session.people.map(famtreeStore.personSnapshot);
   const fmp = findmypast.hasAccessToken()
-    ? 'Use graphql_query against Findmypast to gather evidence before updating anyone.'
+    ? [
+        'Use graphql_query against Findmypast to gather evidence before updating anyone.',
+        'When graphql_query returns success:false, read the errors and hint/fixHints, correct the query ' +
+          '(field names, required nested selections, argument/variable names and types), and retry with the fixed query.',
+        'Change something real on each retry — do not resubmit the same broken query.',
+        `If it still fails after ${MAX_CONSECUTIVE_GRAPHQL_ERRORS} consecutive attempts, stop calling graphql_query and finish with what you have.`,
+      ].join(' ')
     : 'No Findmypast token is configured, so only record gaps and extensions; do not invent facts.';
 
   return `Research the famtree document "${session.source.name}" and add supported details to the research document "${session.research.name}" (${session.research.id}).
@@ -306,7 +400,7 @@ Rules:
 3. ${fmp}
 4. Use update_person for schema fields. Use append_note for narrative research notes. Use record_extension when the schema has no field.
 5. Do not invent dates, places or relationships.
-6. Stop after the clearest supported additions.
+6. Stop after the clearest supported additions. Do not loop on identical failing GraphQL queries.
 7. Finish with a short account of what you added and what you left out.`;
 }
 
@@ -331,6 +425,9 @@ module.exports.treeResearchAgent = async (event, context, callback) => {
     changes: [],
     extensions: [],
     truncated: false,
+    graphqlConsecutiveErrors: 0,
+    graphqlLastError: '',
+    abortReason: '',
   };
 
   try {
@@ -354,7 +451,7 @@ module.exports.treeResearchAgent = async (event, context, callback) => {
       doc: await famtreeStore.saveDoc(session.source.userid, research.doc),
     };
 
-    const [{ Agent, tool, BedrockModel }, { z }] = await Promise.all([
+    const [{ Agent, tool, BedrockModel, AfterToolsEvent }, { z }] = await Promise.all([
       import('@strands-agents/sdk'),
       import('zod'),
     ]);
@@ -372,11 +469,20 @@ module.exports.treeResearchAgent = async (event, context, callback) => {
       systemPrompt:
         'You research a family tree stored in this API\'s document store. ' +
         'Read the source document and write only to the research document created for this run. ' +
-        'Every update needs evidence. Attributes with no person field go in record_extension.',
+        'Every update needs evidence. Attributes with no person field go in record_extension. ' +
+        'When a GraphQL query fails, fix the query from the error message (fields, subfields, arguments) and retry. ' +
+        'If graphql_query keeps failing after corrected retries, stop calling it and finish.',
+    });
+
+    agent.addHook(AfterToolsEvent, (event) => {
+      if (session.abortReason) {
+        event.endTurn = session.abortReason;
+      }
     });
 
     const result = await agent.invoke(buildPrompt(session));
-    const narrative = result && result.lastMessage ? String(result.lastMessage) : '';
+    const narrative = session.abortReason
+      || (result && result.lastMessage ? String(result.lastMessage) : '');
 
     const markdown = renderReport({
       date,
@@ -396,6 +502,9 @@ module.exports.treeResearchAgent = async (event, context, callback) => {
       changes: session.changes,
       extensions: session.extensions,
       narrative,
+      aborted: Boolean(session.abortReason),
+      graphqlConsecutiveErrors: session.graphqlConsecutiveErrors,
+      graphqlLastError: session.graphqlLastError || undefined,
     }, params.overrideExisting);
 
     console.log('treeResearchAgent saved', saved.markdownKey, 'research', session.research.id);
@@ -404,6 +513,7 @@ module.exports.treeResearchAgent = async (event, context, callback) => {
       report: saved.markdownKey,
       researchDocId: session.research.id,
       sourceDocId: session.source.id,
+      aborted: Boolean(session.abortReason),
     });
   } catch (err) {
     console.error(err);
