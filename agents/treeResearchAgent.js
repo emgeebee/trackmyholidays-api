@@ -85,7 +85,7 @@ function renderReport(context, diff, narrative) {
   return lines.filter((line) => line !== undefined).join('\n');
 }
 
-async function saveReport(date, markdown, json) {
+async function saveReport(date, markdown, json, skipJson = false) {
   if (!DOCS_BUCKET) throw new Error('DOCS_BUCKET is not configured');
   const markdownKey = `reports/tree-research-${date}.md`;
   const jsonKey = `reports/tree-research-${date}.json`;
@@ -95,13 +95,17 @@ async function saveReport(date, markdown, json) {
     Body: markdown,
     ContentType: 'text/markdown',
   }));
-  await s3.send(new PutObjectCommand({
-    Bucket: DOCS_BUCKET,
-    Key: jsonKey,
-    Body: JSON.stringify(json, null, 2),
-    ContentType: 'application/json',
-  }));
-  return { markdownKey, jsonKey };
+  
+  if (!skipJson) {
+    await s3.send(new PutObjectCommand({
+      Bucket: DOCS_BUCKET,
+      Key: jsonKey,
+      Body: JSON.stringify(json, null, 2),
+      ContentType: 'application/json',
+    }));
+  }
+  
+  return { markdownKey, jsonKey: skipJson ? null : jsonKey };
 }
 
 function buildTools(tool, z, session) {
