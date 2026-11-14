@@ -7,6 +7,7 @@ const tokenStore = require("../holidays/tokenStore");
 const CLIENT_IDS = [
   process.env.GOOGLE_CLIENT_ID,
   process.env.FAMTREE_GOOGLE_CLIENT_ID,
+  process.env.FOOTBALL_MANAGER_GOOGLE_CLIENT_ID,
 ].filter(Boolean);
 const TOKEN_SIGNING_SECRET = process.env.TOKEN_SIGNING_SECRET;
 const { OAuth2Client } = require("google-auth-library");
