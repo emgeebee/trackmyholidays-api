@@ -1,6 +1,6 @@
 # trackmyholidays-api
 
-Serverless backend for [Track My Holidays](https://trackmyholidays.com) and [famtree](https://famtree.buzz). It runs on AWS Lambda behind API Gateway (Serverless Framework v3, Node 22, `us-west-2`) and provides:
+Serverless backend for [Track My Holidays](https://trackmyholidays.com), [famtree](https://famtree.buzz), and football manager. It runs on AWS Lambda behind API Gateway (Serverless Framework v3, Node 22, `us-west-2`) and provides:
 
 - a per-user holidays record (DynamoDB)
 - long-lived API tokens, as an alternative to Google ID tokens
@@ -26,7 +26,7 @@ TOKEN=<google-id-token-or-long-lived-token>
 
 Every endpoint except `GET /version` needs an `Authorization: Bearer <token>` header. The token can be:
 
-- a **Google ID token** issued for one of the configured client ids (Track My Holidays or famtree), or
+- a **Google ID token** issued for one of the configured client ids (Track My Holidays, famtree, or football manager), or
 - a **long-lived token** from `POST /generateToken`, which authenticates as the same Google user.
 
 The user id is always taken from the token, never from the URL or body, so users can only reach their own data. Missing or invalid tokens get `401 {"message":"Unauthorized"}`.
@@ -227,6 +227,7 @@ Set as environment variables at deploy time:
 |---|---|---|
 | `GOOGLE_CLIENT_ID` | yes | Google OAuth client id for Track My Holidays |
 | `FAMTREE_GOOGLE_CLIENT_ID` | no | Google OAuth client id for famtree |
+| `FOOTBALL_MANAGER_GOOGLE_CLIENT_ID` | no | Google OAuth client id for football manager |
 | `TOKEN_SIGNING_SECRET` | yes | Secret used to sign long-lived tokens |
 | `TOKEN_EXPIRY` | no | Long-lived token lifetime, default `365d` |
 | `L3_AGENT_MODEL` | no | Bedrock model for the log report agent |
@@ -252,7 +253,7 @@ Deploys run in GitHub Actions ([`.github/workflows/deploy.yml`](.github/workflow
 
 Each GitHub environment (`dev`, `prod`) needs:
 
-- variables `GOOGLE_CLIENT_ID` and `FAMTREE_GOOGLE_CLIENT_ID`
+- variables `GOOGLE_CLIENT_ID`, `FAMTREE_GOOGLE_CLIENT_ID`, and `FOOTBALL_MANAGER_GOOGLE_CLIENT_ID`
 - secrets `TOKEN_SIGNING_SECRET`, `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`
 
 To deploy by hand:
